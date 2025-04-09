@@ -37,7 +37,7 @@ namespace SlashDMExample
             _client.Ready += ReadyAsync;
             _client.InteractionCreated += HandleInteraction;
 
-            string token = "DISCORD_BOT_TOKEN";
+            string token = "MTM1OTYzNTUyNzA5MDk2NjUzOA.GOl8Jl.mLsYN7V4Qrwm28rWGZWySLD109eYOAvV0hEkCE";
             await _client.LoginAsync(TokenType.Bot, token);
             await _client.StartAsync();
 

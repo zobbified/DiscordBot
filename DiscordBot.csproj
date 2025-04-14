@@ -15,4 +15,22 @@
     <PackageReference Include="RestSharp" Version="112.1.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EditorConfigFiles Remove="C:\Users\Owner\source\repos\DiscordBot\.editorconfig" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="config.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="C:\Users\Owner\source\repos\DiscordBot\.editorconfig" />
+  </ItemGroup>
+
 </Project>

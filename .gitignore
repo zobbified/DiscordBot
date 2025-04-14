@@ -364,3 +364,5 @@ FodyWeavers.xsd
 /ReplicateService.cs
 /MyCommands.cs
 /Program.cs
+/config.json
+/Program.cs

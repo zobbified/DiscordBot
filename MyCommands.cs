@@ -30,12 +30,14 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("jelq", "Start jelqing.")]
     public async Task JelqCommand()
     {
+        await RespondAsync("Commencing Jelq Session.");
+
         for (int i = 0; i < 10; i++)
         {
-            await RespondAsync("Jelqing...");
+            await FollowupAsync("Jelqing...");
         }
         Random rng = new Random();
-        await RespondAsync("Gained " + rng.NextDouble() + " inches.");
+        await FollowupAsync("Gained " + rng.NextDouble() + " inches.");
     }
 
     [SlashCommand("image", "Generate an image using Stable Diffusion 3.5 Large")]

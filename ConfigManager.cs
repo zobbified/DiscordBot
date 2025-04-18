@@ -1,5 +1,4 @@
-﻿using System.IO;
-using DiscordBot;
+﻿using DiscordBot;
 using Newtonsoft.Json;
 
 public static class ConfigManager

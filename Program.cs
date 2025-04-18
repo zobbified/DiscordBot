@@ -4,10 +4,7 @@ using Discord.WebSocket;
 using DiscordBot;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
-using System;
-using System.IO;
 using System.Reflection;
-using System.Threading.Tasks;
 
 namespace SlashDMExample
 {
@@ -42,7 +39,7 @@ namespace SlashDMExample
             // Initialize the Discord client and command services
             _client = new DiscordSocketClient(new DiscordSocketConfig
             {
-                GatewayIntents = GatewayIntents.DirectMessages | GatewayIntents.MessageContent | GatewayIntents.Guilds | GatewayIntents.GuildMembers,
+                GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers,
                 AlwaysDownloadUsers = true
             });
 
@@ -86,7 +83,7 @@ namespace SlashDMExample
 
                 // Register guild commands
                 await _commands.RegisterCommandsToGuildAsync(ulong.Parse(ConfigManager.Config.ServerID));
-                Console.WriteLine("✅ Slash commands registered globally.");
+                Console.WriteLine("Slash commands registered globally.");
             }
             catch (Exception ex)
             {

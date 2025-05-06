@@ -1,12 +1,14 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
-using DiscordBot;
+using DiscordBot.Config;
+using DiscordBot.SQL;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using System.Reflection;
 
-namespace SlashDMExample
+namespace DiscordBot.Main
 {
     class Program
     {
@@ -36,8 +38,39 @@ namespace SlashDMExample
                 return;
             }
 
-            // Initialize the Discord client and command services
-            _client = new DiscordSocketClient(new DiscordSocketConfig
+            // SQL
+
+            // Get the project root from the base directory of the app
+            string projectRoot = Directory.GetParent(AppContext.BaseDirectory)!.Parent!.Parent!.Parent!.FullName;
+            string dbPath = Path.Combine(projectRoot, "SQL", "helper.db");
+
+            if (!File.Exists(dbPath))
+            {
+                Console.WriteLine("❌ helper.db is missing.");
+                return;
+            }
+
+            try
+            {
+                // Try opening a SQLite connection instead of reading the file directly
+                using var connection = new SqliteConnection($"Data Source={dbPath}");
+                connection.Open();
+
+                var command = connection.CreateCommand();
+                command.CommandText = "SELECT name FROM sqlite_master WHERE type='table' LIMIT 1;";
+                command.ExecuteNonQuery(); // Just test that DB is functional
+
+                Console.WriteLine("SQL database loaded successfully.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Failed to access helper.db: {ex.Message}");
+                return;
+            }
+
+
+                // Initialize the Discord client and command services
+                _client = new DiscordSocketClient(new DiscordSocketConfig
             {
                 GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers,
                 AlwaysDownloadUsers = true

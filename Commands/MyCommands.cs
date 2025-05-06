@@ -1,22 +1,39 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
-using DiscordBot;
+using DiscordBot.Commands.Pokemon;
+using DiscordBot.SQL;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using PokeApiNet;
 using RestSharp;
+using System;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Serialization;
 using static System.Net.Mime.MediaTypeNames;
+using Replicate.Net;
+using Replicate.Net.Models;
+using Replicate.Net.Client;
+using Replicate.Net.Factory;
+using Microsoft.Extensions.DependencyInjection;
+using Replicate.Net.Interfaces;
+using DiscordBot.Config;
 
 [CommandContextType(InteractionContextType.BotDm, InteractionContextType.PrivateChannel)]
 [IntegrationType(ApplicationIntegrationType.UserInstall)]
 public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 {
+    static bool firedFromJob = false;
     private readonly string _replicateApiKey = ConfigManager.Config.ReplicateToken;
 
-    private static readonly Dictionary<ulong, List<string>> _promptCache = [];
-    public static Dictionary<ulong, List<CaughtPokemon>> userPokemonCollection = [];
+    private static readonly List<string> _promptCache = [];
+    private static readonly Helper _dbHelper = new();
+    public static readonly Dictionary<ulong, List<CaughtPokemon>> userPokemonCollection = [];
+    private static readonly string[] Emojis = new string[]
+    {
+        "🍎", "🍊", "🍋", "🍉", "🍓", "🍒"
+    };
 
     //[SlashCommand("hello", "Say hello back!")]
     //public async Task HelloCommand()
@@ -44,19 +61,41 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     }
 
     [SlashCommand("image", "Generate an image using FLUX.1 [schnell]")]
-    public async Task GenerateImageAsync([Summary("prompt", "Describe the image you want to generate")] string prompt)
+    public async Task GenerateImageAsync(
+        [Summary("prompt", "Describe the image you want to generate")] string prompt,
+        [Summary("aspect_ratio", "Set an aspect ratio (optional)")]
+        [Choice("1:1", "1:1")]
+        [Choice("16:9", "16:9")]
+        [Choice("21:9", "21:9")]
+        [Choice("3:2", "3:2")]
+        [Choice("2:3", "2:3")]
+        [Choice("4:5", "4:5")]
+        [Choice("5:4", "5:4")]
+        [Choice("3:4", "3:4")]
+        [Choice("4:3", "4:3")]
+        [Choice("9:16", "9:16")]
+        [Choice("9:21", "9:21")]
+        string? ratio = null)
     {
         await DeferAsync();
 
         try
         {
-            var embed = await GenerateImageFromStableDiffusionAsync(prompt);
+            var embed = await GenerateImageFromStableDiffusionAsync(prompt, ratio);
+
+            // Create a short unique ID for this prompt
+            string shortId = Guid.NewGuid().ToString("N").Substring(0, 8);
 
             string encodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(prompt));
+            string encodedRatio = ratio != null ? Convert.ToBase64String(Encoding.UTF8.GetBytes(ratio)) : "1:1";
 
-            string hashedPrompt = Convert.ToBase64String(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))).Substring(0, 32);
+
+            // Save the prompt to your DB using the short ID
+            _dbHelper.SavePrompt(shortId, encodedPrompt);
+
+            //string hashedPrompt = Convert.ToBase64String(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))).Substring(0, 32);
             var builder = new ComponentBuilder()
-                .WithButton("🔁", customId: $"regen:{hashedPrompt}", ButtonStyle.Primary);
+                .WithButton("🔁", customId: $"regen:{shortId}", ButtonStyle.Primary);
 
             await FollowupAsync(embed: embed, components: builder.Build());
         }
@@ -68,21 +107,30 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     }
 
     [ComponentInteraction("regen:*")]
-    public async Task RegenImageAsync(string encodedPrompt)
+    public async Task RegenImageAsync(string shortId)
     {
-
         await DeferAsync();
+
         try
         {
             await FollowupAsync("Regenerating...");
-            string decodedPrompt = Encoding.UTF8.GetString(Convert.FromBase64String(encodedPrompt));
+
+            // Check if the shortId exists and retrieve the encoded prompt
+            string? encodedPrompt = _dbHelper.GetEncodedPrompt(shortId);
+
+            // Decode from base64 if we have an encoded prompt
+            string decodedPrompt = string.IsNullOrEmpty(encodedPrompt) ? "lol" : Encoding.UTF8.GetString(Convert.FromBase64String(encodedPrompt));
+
+
+            //string? decodedRatio = string.IsNullOrEmpty(encodedRatio) ? "1:1" : Encoding.UTF8.GetString(Convert.FromBase64String(encodedRatio));
             var embed = await GenerateImageFromStableDiffusionAsync(decodedPrompt);
 
-            string newEncodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(decodedPrompt));
+            //string newEncodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(decodedPrompt));
             var builder = new ComponentBuilder()
-            .WithButton("🔁", customId: $"regen:{newEncodedPrompt}", ButtonStyle.Primary);
+            .WithButton("🔁", customId: $"regen:{shortId}", ButtonStyle.Primary);
 
             await FollowupAsync(embed: embed, components: builder.Build());
+
         }
         catch (Exception ex)
         {
@@ -92,10 +140,8 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     }
 
 
-
-
     // Method to interact with Replicate API and get an image URL
-    private async Task<Embed> GenerateImageFromStableDiffusionAsync(string input)
+    private async Task<Embed> GenerateImageFromStableDiffusionAsync(string input, string? ratio = null)
     {
         var client = new RestClient("https://api.replicate.com/v1/");
         var request = new RestRequest("models/black-forest-labs/flux-schnell/predictions", Method.Post);
@@ -114,10 +160,11 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             {
                 //cfg = 5,
                 prompt = input,
-                output_format = "png",
-                disable_safety_checker = true
-                //output_quality = 90,
-                //aspect_ratio = "1:1",
+                output_format = "jpg",
+                disable_safety_checker = true,
+                output_quality = 95,
+                aspect_ratio = string.IsNullOrEmpty(ratio) ? "1:1" : ratio
+
             }
         };
 
@@ -184,9 +231,10 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
                 // If it's a URL to an image, you can send it as an embed or just as a URL
                 var embed = new EmbedBuilder()
                     .WithImageUrl(imageUrl)
+                    .WithDescription(input)
                     .Build();
 
-                return embed;
+                return (embed);
 
             }
 
@@ -214,11 +262,24 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             {
                 prompt += $"\nImage: {image.Url}";
             }
-
             // Generate the text in real-time from the Replicate API
             string text = await GenerateTextFromReplicateAsync(prompt, image);
 
-            await FollowupAsync(text.Length > 1900 ? text[..1900] + "..." : text);
+            const int MaxLength = 2000;
+
+            if (text.Length <= MaxLength)
+            {
+                await FollowupAsync(text);
+            }
+            else
+            {
+                // Split the text into chunks of 2000 characters
+                for (int i = 0; i < text.Length; i += MaxLength)
+                {
+                    string chunk = text.Substring(i, Math.Min(MaxLength, text.Length - i));
+                    await FollowupAsync(chunk);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -229,48 +290,36 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
     private async Task<string> GenerateTextFromReplicateAsync(string prompt, Attachment? image = null)
     {
-        // Save prompt to user's history
-        ulong userId = Context.User.Id;
 
-        if (!_promptCache.ContainsKey(userId))
-        {
-            _promptCache[userId] = new List<string>();
-        }
         // Combine existing context WITHOUT the current prompt
-        string previousContext = string.Join("\n", _promptCache[userId]);
+        string previousContext = string.Join("\n", _promptCache);
 
         // Create the final prompt string
         string finalPrompt = string.IsNullOrWhiteSpace(previousContext)
             ? $"{prompt}"  // If there's no history, just use the current prompt
-            : $"Previous:\n{previousContext}\n\nNow:\n{prompt}";
+            : $"Previous Prompt(s):\n{previousContext}\n\nCurrent Prompt:\n{prompt}";
 
         // Add current prompt to cache AFTER generating finalPrompt
-        _promptCache[userId].Add(prompt);
+        _promptCache.Add(prompt);
 
-        // Optional: Limit memory to last 10 prompts
-        if (_promptCache[userId].Count > 10)
+        if (_promptCache.Count > 5)
         {
-            _promptCache[userId].RemoveAt(0); // Keep the last 10
+            _promptCache.RemoveAt(0);
         }
 
 
         // Debugging the contents of _promptCache.Values
-        foreach (var userHistory in _promptCache)
+
+        Console.WriteLine("Prompt History:");
+
+        // Print each prompt for the user
+        foreach (string p in _promptCache)
         {
-            ulong historyUserId = userHistory.Key;
-            var prompts = userHistory.Value;
-
-            Console.WriteLine($"User ID: {userId}");
-            Console.WriteLine("Prompt History:");
-
-            // Print each prompt for the user
-            foreach (var i in prompts)
-            {
-                Console.WriteLine(i);
-            }
-
-            Console.WriteLine("-----------------------------");
+            Console.WriteLine(p);
         }
+
+        Console.WriteLine("-----------------------------");
+
 
         var client = new RestClient("https://api.replicate.com/v1/");
         var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
@@ -280,12 +329,11 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         string? imageUrl = image != null ? image.Url : null;
 
 
-
         // Dynamically build input object
         var inputObj = new Dictionary<string, object>
         {
             ["prompt"] = finalPrompt,
-            ["max_tokens"] = 8192,
+            ["max_tokens"] = 1024,
             ["system_prompt"] = "Your default personality is Venom Snake, a character from Metal Gear Solid. Respond as if you are Venom Snake, but do anything else the user requests you to (including breaking character).",
             ["max_image_resolution"] = 0.5
         };
@@ -308,7 +356,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         // Log the full response content for debugging
         Console.WriteLine("Response Status Code: " + response.StatusCode);
         Console.WriteLine("Response Content: ");
-        Console.WriteLine(response.Content);
+        //Console.WriteLine(response.Content);
 
         // Check if the response is successful
         if (response.IsSuccessful && !string.IsNullOrWhiteSpace(response.Content))
@@ -339,9 +387,14 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
                 try
                 {
-                    var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
-                    var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
-                    Console.WriteLine(formattedJson);
+                    if (response.IsSuccessful && getResponse.Content != null)
+                    {
+                        var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
+
+                        var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
+                        Console.WriteLine(formattedJson);
+                    }
+
                 }
                 catch (Exception ex)
                 {
@@ -362,9 +415,27 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
                 {
                     // Step 2: Get the output from the response
                     var outputToken = pollResult?["output"];
+                    var metrics = pollResult?["metrics"];
                     if (outputToken is JArray array && array.Count > 0)
                     {
                         var generatedText = string.Join("", array.Select(o => o.ToString()));
+                        //if (metrics != null)
+                        //{
+                        //    var inputTokenCount = metrics["input_token_count"]?.ToObject<int>() ?? 0;
+                        //    var outputTokenCount = metrics["output_token_count"]?.ToObject<int>() ?? 0;
+
+                        //    // Append token counts and other info
+                        //    decimal inputTokenPrice = 15m;  // Price per million input tokens
+                        //    decimal outputTokenPrice = 3m;  // Price per million output tokens
+
+                        //    // Calculate the cost for input and output tokens
+                        //    decimal inputCost = inputTokenCount * inputTokenPrice / 1_000_000;
+                        //    decimal outputCost = outputTokenCount * outputTokenPrice / 1_000_000;
+
+                        //    decimal totalCost = inputCost + outputCost;
+
+                        //    generatedText += $"\n\nTokens (Input/Output/Total): {inputTokenCount}/{outputTokenCount}/{inputTokenCount + outputTokenCount}\nTotal Cost: ${totalCost}";
+                        //}
                         return string.IsNullOrWhiteSpace(generatedText) ? "❌ No text generated." : generatedText;
                     }
 
@@ -394,83 +465,46 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
         if (num <= 5)
         {
-            var client = new RestClient("https://api.replicate.com/v1/");
-            var sb = new StringBuilder();
+
+            var client = new PokeApiNet.PokeApiClient();
+
             ulong userId = (Context.User as SocketUser)?.Id ?? 0;
+            Random rng = new();
+
+            //foreach (var p in pokemon.Results)
+            //{
+            //    Pokemon fullPokemon = await client.GetResourceAsync(p);
+            //    Console.WriteLine($"#{fullPokemon.Id} - {fullPokemon.Name} | Height: {fullPokemon.Height}, Weight: {fullPokemon.Weight}");
+            //}
 
             for (int i = 0; i < num; i++)
             {
-                var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
-                request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-                request.AddHeader("Content-Type", "application/json");
 
-                var inputObj = new Dictionary<string, object>
+                try
                 {
-                    ["prompt"] = "return the name of a random pokemon",
-                    ["max_tokens"] = 1024,
-                    ["system_prompt"] = "You are an assistant with access to the full National Pokédex. Respond with only the name of a random Pokémon."
-                };
+                    int randomId = rng.Next(1, 1026);
+                    var pokemon = await client.GetResourceAsync<Pokemon>(randomId);
+                    string spriteUrl = pokemon.Sprites.Other.OfficialArtwork.FrontDefault;
+                    string displayName = char.ToUpper(pokemon.Name[0]) + pokemon.Name[1..];
 
-                request.AddJsonBody(new { input = inputObj });
-                var response = await client.ExecuteAsync(request);
+                    var embed = new EmbedBuilder()
+                        .WithTitle($"You caught a {displayName}!")
+                        .WithImageUrl(spriteUrl)
+                        .WithColor(Color.Gold)
+                        .Build();
+                    AddPokemonToUser(userId, displayName);
 
-                if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
-                {
-                    sb.AppendLine($"❌ Failed to fetch Pokémon #{i + 1}");
-                    continue;
+                    await FollowupAsync(embed: embed);
+
+
                 }
-
-                var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
-                var getUrl = initialResponse?["urls"]?["get"]?.ToString();
-                if (string.IsNullOrEmpty(getUrl))
+                catch (Exception ex)
                 {
-                    sb.AppendLine($"❌ No prediction URL for Pokémon #{i + 1}");
-                    continue;
-                }
-
-                string status = "starting";
-                string finalOutput = null;
-
-                while (status != "succeeded" && status != "failed")
-                {
-                    await Task.Delay(2000);
-
-                    var getRequest = new RestRequest(getUrl, Method.Get);
-                    getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-                    var getResponse = await client.ExecuteAsync(getRequest);
-
-                    var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
-                    status = pollResult?["status"]?.ToString() ?? "unknown";
-
-                    if (status == "succeeded")
-                    {
-                        var output = pollResult["output"];
-                        if (output is JArray array && array.Count > 0)
-                        {
-                            finalOutput = string.Join("", array.Select(o => o.ToString())).Trim();
-                        }
-                        break;
-                    }
-
-                    if (status == "failed")
-                    {
-                        sb.AppendLine($"❌ Prediction failed for Pokémon #{i + 1}");
-                        break;
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(finalOutput))
-                {
-                    AddPokemonToUser(userId, finalOutput);
-                    sb.AppendLine($"✅ Caught **{finalOutput}**!");
-                }
-                else if (string.IsNullOrEmpty(finalOutput))
-                {
-                    sb.AppendLine($"❌ No output received for Pokémon #{i + 1}");
+                    await FollowupAsync("Failed to catch");
+                    Console.WriteLine(ex);
                 }
             }
 
-            await FollowupAsync(sb.ToString());
         }
     }
 
@@ -510,13 +544,15 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
                     {
                         Name = g.Key,
                         Count = g.Count(),
-                        IsShiny = false, // or determine this based on your logic
-                        CaughtAt = DateTime.UtcNow // optional
+                        IsShiny = g.Any(p => p.IsShiny), // or determine this based on your logic
+                        CaughtAt = g.Min(p => p.CaughtAt) // optional
                     })
                     .ToList();
 
 
-                await SendPokedexPage(Context, grouped, page: 1);
+                var (embed, components) = await SendPokedexPage(Context, grouped, page: 1);
+
+                await FollowupAsync(embed: embed, components: components);
             }
             else
             {
@@ -578,7 +614,8 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
         var page = currentPage - 1;
         var message = await SendPokedexPage(Context, caughtPokemons, page);
-        await ModifyOriginalResponseAsync(msg => {
+        await ModifyOriginalResponseAsync(msg =>
+        {
             msg.Embed = message.embed;
             msg.Components = message.components;
         });
@@ -601,7 +638,8 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
         var page = currentPage + 1;
         var message = await SendPokedexPage(Context, caughtPokemons, page);
-        await ModifyOriginalResponseAsync(msg => {
+        await ModifyOriginalResponseAsync(msg =>
+        {
             msg.Embed = message.embed;
             msg.Components = message.components;
         });
@@ -611,10 +649,240 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     public async Task GenerateRandomImage()
     {
         await DeferAsync();
-        string query = await GenerateTextFromReplicateAsync("generate a random image query for flux.1 [schnell]. prompt only. no venom snake. nothing else. just prompt. extremely random.");
-        Embed embed = await GenerateImageFromStableDiffusionAsync(query);
+        try
+        {
+            // Step 1: Generate prompt
+            string prompt = await GenerateTextFromReplicateAsync(
+                "generate a random AI image. prompt only. no venom snake. nothing else. just prompt."
+            );
 
-        await FollowupAsync(query, embed: embed);
+            // Step 2: Generate the image embed
+            var embed = await GenerateImageFromStableDiffusionAsync(prompt);
+
+            // Step 3: Create hashed prompt for regen
+            string encodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(prompt));
+            string hashedPrompt = Convert.ToBase64String(
+                SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))
+            ).Substring(0, 32);
+
+            // Step 4: Add regen button
+            var builder = new ComponentBuilder()
+                .WithButton("🔁", customId: $"regen:{hashedPrompt}", ButtonStyle.Primary);
+
+            // Step 5: Send the image + prompt + button
+            await FollowupAsync(embed: embed, components: builder.Build());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+            await FollowupAsync("❌ Failed to generate image. Please try again later.\n[adjusts prosthetic arm]");
+        }
     }
 
+    [SlashCommand("loredrop", "Start explaining random MGS lore no one asked for.")]
+    public async Task RandomLoreDrop()
+    {
+        await DeferAsync();
+
+        try
+        {
+            await FollowupAsync(GenerateTextFromReplicateAsync("As Venom Snake and/or someone who knows a lot about MGS lore, please give me a short explanation of a specific piece of lore about the Metal Gear Solid franchise. Like a fun fact. Keep them extremely random, as to not repeat yourself.").Result);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+
+    }
+
+    [SlashCommand("slots", "Start playing a slot machine (costs $10).")]
+    public async Task GamblingSlots()
+    {
+        await DeferAsync();
+
+        ulong userID = Context.User.Id;
+        decimal money = _dbHelper.GetMoneyDecimal(userID);
+
+        if (money >= 10)
+        {
+            _dbHelper.SaveMoney(userID, -10);
+            string slotResult = GenerateSlotResult(out bool isWin);
+
+            var builder = new ComponentBuilder()
+                .WithButton("🔁", "slot_spin", ButtonStyle.Primary);
+
+            var message = slotResult;
+            if (isWin)
+            {
+                Random rng = new Random();
+                decimal won = rng.Next(10000000, 100000000);
+                message += $"\nYou won ${Math.Round(won, 2)}! 🎉";
+                _dbHelper.SaveMoney(Context.User.Id, won);
+            }
+
+            await ModifyOriginalResponseAsync(msg =>
+            {
+                msg.Content = message;
+                msg.Components = builder.Build();
+            });
+        }
+        else
+        {
+            await FollowupAsync("You have no money. :skull:");
+        }
+    }
+
+    [ComponentInteraction("slot_spin")]
+    public async Task SlotSpinButton()
+    {
+        await GamblingSlots();
+    }
+
+    private string GenerateSlotResult(out bool isWin)
+    {
+        StringBuilder result = new StringBuilder();
+        Random rand = new Random();
+        string[] slotEmojis = new string[3];
+
+        for (int i = 0; i < 3; i++)
+        {
+            slotEmojis[i] = Emojis[rand.Next(Emojis.Length)];
+            result.Append(slotEmojis[i] + " ");
+        }
+
+        isWin = slotEmojis[0] == slotEmojis[1] && slotEmojis[1] == slotEmojis[2];
+        return result.ToString().Trim();
+    }
+
+    [SlashCommand("money", "Check how much money you have from gambling.")]
+    public async Task CheckMoney()
+    {
+        await DeferAsync();
+
+        try
+        {
+            decimal money = _dbHelper.GetMoneyDecimal(Context.User.Id);
+            //Console.WriteLine(money);
+            if (money != 0)
+            {
+
+                await FollowupAsync($"You have ${money:F2}");
+            }
+            else
+            {
+                await FollowupAsync($"You have no money. Broke ahhh :joy:");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+    }
+    [SlashCommand("fries", "Put the fries in the bag.")]
+    public async Task PutFriesInTheBag()
+    {
+        await DeferAsync();
+        if (!firedFromJob)
+        {
+            try
+            {
+                Random rng = new Random();
+                int chanceOfBeingFired = rng.Next(10);
+                if (chanceOfBeingFired < 9)
+                {
+                    ulong userID = Context.User.Id;
+                    //Console.WriteLine(userID);
+                    int hours = rng.Next(1, 24);
+                    decimal money = 11.50m * hours;
+
+                    _dbHelper.SaveMoney(userID, money);
+
+                    await FollowupAsync($"You worked a {hours} hour shift putting fries in the bag and earned ${money} being paid $11.50 per hour, which is the minimum wage in South Dakota.");
+                }
+                else
+                {
+                    firedFromJob = true;
+                    await FollowupAsync("You're fired and you earn nothing. GET OUT!");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+        }
+        else
+        {
+            await FollowupAsync("You're not allowed to put fries in the bag anymore.");
+        }
+    }
+
+    [SlashCommand("video", "Create a 5s video using Luma Ray Flash 2.")]
+    public async Task GenerateVideo(string prompt, bool loop = false)
+    {
+        await DeferAsync();
+        try
+        {
+            string input = prompt;
+            bool isLoop = loop;
+            await GenerateVideoAsync(prompt, isLoop);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+            await FollowupAsync("❌ Failed to generate video. Please try again later.\n[adjusts prosthetic arm]");
+        }
+    }
+    private async Task GenerateVideoAsync(string prompt, bool loop = false)
+    {
+        try
+        {
+
+            var factory = new ReplicateApiFactory();
+            var replicateApi = factory.GetApi(_replicateApiKey);
+
+            var requestReplicateFile = new Request
+            {
+                Version = "luma/ray-flash-2-540p",
+                Input = new InputConfig
+                {
+                    Prompt = prompt,
+                    Loop = loop
+                }
+            };
+            var responseFile = await replicateApi.CreatePredictionAndWaitOnResultAsync(requestReplicateFile).ConfigureAwait(false);
+            string? videoUrl = responseFile == null ? "error" : responseFile.Output.ToString();
+            using var httpClient = new HttpClient();
+            var videoBytes = await httpClient.GetByteArrayAsync(videoUrl);
+
+            using var stream = new MemoryStream(videoBytes);
+            stream.Position = 0;
+
+            await FollowupWithFileAsync(new FileAttachment(stream, "output.mp4"), $"{prompt}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+            await FollowupAsync($"did you just request to see {prompt}? What the actual fuck is wrong with you?");
+        }
+    }
+
+    [SlashCommand("random_vid", "Generate a random video.")]
+    public async Task GenerateRandomVideo()
+    {
+        await DeferAsync();
+        try
+        {
+            string prompt = await GenerateTextFromReplicateAsync(
+                "generate a random AI video query. prompt only. nothing else. just prompt. extremely random and unexpected, maybe a bit silly"
+            );
+
+            await (GenerateVideoAsync(prompt, default));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+            await FollowupAsync("❌ Failed to generate video. Please try again later.\n[adjusts prosthetic arm]");
+        }
+
+    }
 }

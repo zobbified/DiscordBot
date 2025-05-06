@@ -1,4 +1,4 @@
-﻿using DiscordBot;
+﻿using DiscordBot.Config;
 using Newtonsoft.Json;
 
 public static class ConfigManager

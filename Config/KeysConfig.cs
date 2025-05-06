@@ -1,4 +1,4 @@
-﻿namespace DiscordBot
+﻿namespace DiscordBot.Config
 {
     public class BotConfig
     {

@@ -12,28 +12,32 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Serialization;
 using static System.Net.Mime.MediaTypeNames;
-using Replicate.Net;
-using Replicate.Net.Models;
-using Replicate.Net.Client;
-using Replicate.Net.Factory;
-using Microsoft.Extensions.DependencyInjection;
-using Replicate.Net.Interfaces;
+//using Replicate.Net;
+//using Replicate.Net.Models;
+//using Replicate.Net.Client;
+//using Replicate.Net.Factory;
+//using Microsoft.Extensions.DependencyInjection;
+//using Replicate.Net.Interfaces;
 using DiscordBot.Config;
+using System.Reactive.Linq;
+using System.Xml.Linq;
 
 [CommandContextType(InteractionContextType.BotDm, InteractionContextType.PrivateChannel)]
 [IntegrationType(ApplicationIntegrationType.UserInstall)]
 public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 {
     static bool firedFromJob = false;
-    private readonly string _replicateApiKey = ConfigManager.Config.ReplicateToken;
+    //private readonly string _replicateApiKey = ConfigManager.Config.ReplicateToken;
 
-    private static readonly List<string> _promptCache = [];
+    //private static readonly List<string> _promptCache = [];
     private static readonly Helper _dbHelper = new();
     public static readonly Dictionary<ulong, List<CaughtPokemon>> userPokemonCollection = [];
     private static readonly string[] Emojis = new string[]
     {
         "🍎", "🍊", "🍋", "🍉", "🍓", "🍒"
     };
+
+    //private const string AUTH_TOKEN = "383f83631e56a5560ef53d03ef397a2630446cf3";
 
     //[SlashCommand("hello", "Say hello back!")]
     //public async Task HelloCommand()
@@ -50,462 +54,524 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     [SlashCommand("jelq", "Start jelqing.")]
     public async Task JelqCommand()
     {
-        await RespondAsync("Commencing Jelq Session.");
-
-        for (int i = 0; i < 4; i++)
-        {
-            await FollowupAsync("Jelqing...");
-        }
-        Random rng = new Random();
-        await FollowupAsync("Gained " + rng.NextDouble() + " inches.");
-    }
-
-    [SlashCommand("image", "Generate an image using FLUX.1 [schnell]")]
-    public async Task GenerateImageAsync(
-        [Summary("prompt", "Describe the image you want to generate")] string prompt,
-        [Summary("aspect_ratio", "Set an aspect ratio (optional)")]
-        [Choice("1:1", "1:1")]
-        [Choice("16:9", "16:9")]
-        [Choice("21:9", "21:9")]
-        [Choice("3:2", "3:2")]
-        [Choice("2:3", "2:3")]
-        [Choice("4:5", "4:5")]
-        [Choice("5:4", "5:4")]
-        [Choice("3:4", "3:4")]
-        [Choice("4:3", "4:3")]
-        [Choice("9:16", "9:16")]
-        [Choice("9:21", "9:21")]
-        string? ratio = null)
-    {
-        await DeferAsync();
-
         try
         {
-            var embed = await GenerateImageFromStableDiffusionAsync(prompt, ratio);
+            await RespondAsync("Commencing Jelq Session.");
+            await Task.Delay(3000);
 
-            // Create a short unique ID for this prompt
-            string shortId = Guid.NewGuid().ToString("N").Substring(0, 8);
-
-            string encodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(prompt));
-            string encodedRatio = ratio != null ? Convert.ToBase64String(Encoding.UTF8.GetBytes(ratio)) : "1:1";
-
-
-            // Save the prompt to your DB using the short ID
-            _dbHelper.SavePrompt(shortId, encodedPrompt);
-
-            //string hashedPrompt = Convert.ToBase64String(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))).Substring(0, 32);
-            var builder = new ComponentBuilder()
-                .WithButton("🔁", customId: $"regen:{shortId}", ButtonStyle.Primary);
-
-            await FollowupAsync(embed: embed, components: builder.Build());
+            Random rng = new Random();
+            double amount = rng.NextDouble();
+            amount /= 10;
+            _dbHelper.saveJelq(default, amount);
+            await FollowupAsync($"Gained {Math.Round(amount, 2)} inches. \nTotal inches I've gained from jelqing: {Math.Round(_dbHelper.getJelqTotal(), 2)}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex); // optional logging
-            await FollowupAsync("❌ Failed to generate image. Please try again later.\n[adjusts prosthetic arm]");
+            Console.WriteLine(ex);
+            await FollowupAsync(ex.Message);
         }
     }
 
-    [ComponentInteraction("regen:*")]
-    public async Task RegenImageAsync(string shortId)
+    //[SlashCommand("image", "Generate an image using FLUX.1 [schnell]")]
+    //public async Task GenerateImageAsync(
+    //    [Summary("prompt", "Describe the image you want to generate")] string prompt,
+    //    [Summary("aspect_ratio", "Set an aspect ratio (optional)")]
+    //    [Choice("1:1", "1:1")]
+    //    [Choice("16:9", "16:9")]
+    //    [Choice("21:9", "21:9")]
+    //    [Choice("3:2", "3:2")]
+    //    [Choice("2:3", "2:3")]
+    //    [Choice("4:5", "4:5")]
+    //    [Choice("5:4", "5:4")]
+    //    [Choice("3:4", "3:4")]
+    //    [Choice("4:3", "4:3")]
+    //    [Choice("9:16", "9:16")]
+    //    [Choice("9:21", "9:21")]
+    //    string? ratio = null)
+    //{
+    //    await DeferAsync();
+
+    //    try
+    //    {
+    //        var embed = await GenerateImageFromStableDiffusionAsync(prompt, ratio);
+
+    //        // Create a short unique ID for this prompt
+    //        string shortId = Guid.NewGuid().ToString("N").Substring(0, 8);
+
+    //        string encodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(prompt));
+    //        string encodedRatio = ratio != null ? Convert.ToBase64String(Encoding.UTF8.GetBytes(ratio)) : "1:1";
+
+
+    //        // Save the prompt to your DB using the short ID
+    //        _dbHelper.SavePrompt(shortId, encodedPrompt);
+
+    //        //string hashedPrompt = Convert.ToBase64String(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))).Substring(0, 32);
+    //        var builder = new ComponentBuilder()
+    //            .WithButton("🔁", customId: $"regen:{shortId}", ButtonStyle.Primary);
+
+    //        await FollowupAsync(embed: embed, components: builder.Build());
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine(ex); // optional logging
+    //        await FollowupAsync("❌ Failed to generate image. Please try again later.\n[adjusts prosthetic arm]");
+    //    }
+    //}
+
+    //[ComponentInteraction("regen:*")]
+    //public async Task RegenImageAsync(string shortId)
+    //{
+    //    await DeferAsync();
+
+    //    try
+    //    {
+    //        await FollowupAsync("Regenerating...");
+
+    //        // Check if the shortId exists and retrieve the encoded prompt
+    //        string? encodedPrompt = _dbHelper.GetEncodedPrompt(shortId);
+
+    //        // Decode from base64 if we have an encoded prompt
+    //        string decodedPrompt = string.IsNullOrEmpty(encodedPrompt) ? "lol" : Encoding.UTF8.GetString(Convert.FromBase64String(encodedPrompt));
+
+
+    //        //string? decodedRatio = string.IsNullOrEmpty(encodedRatio) ? "1:1" : Encoding.UTF8.GetString(Convert.FromBase64String(encodedRatio));
+    //        var embed = await GenerateImageFromStableDiffusionAsync(decodedPrompt);
+
+    //        //string newEncodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(decodedPrompt));
+    //        var builder = new ComponentBuilder()
+    //        .WithButton("🔁", customId: $"regen:{shortId}", ButtonStyle.Primary);
+
+    //        await FollowupAsync(embed: embed, components: builder.Build());
+
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine($"Error regenerating image: {ex}");
+    //        await FollowupAsync("❌ Failed to regenerate image.");
+    //    }
+    //}
+
+
+    //// Method to interact with Replicate API and get an image URL
+    //private async Task<Embed> GenerateImageFromStableDiffusionAsync(string input, string? ratio = null)
+    //{
+    //    var client = new RestClient("https://api.replicate.com/v1/");
+    //    var request = new RestRequest("models/black-forest-labs/flux-schnell/predictions", Method.Post);
+
+
+    //    // Headers
+    //    request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+    //    request.AddHeader("Content-Type", "application/json");
+    //    request.AddHeader("Prefer", "wait");
+
+    //    // Body
+    //    var body = new
+    //    {
+    //        //version = "c6b5d2b7459910fec94432e9e1203c3cdce92d6db20f714f1355747990b52fa6", // Replace with correct model version ID
+    //        input = new
+    //        {
+    //            //cfg = 5,
+    //            prompt = input,
+    //            output_format = "jpg",
+    //            disable_safety_checker = true,
+    //            output_quality = 95,
+    //            aspect_ratio = string.IsNullOrEmpty(ratio) ? "1:1" : ratio
+
+    //        }
+    //    };
+
+    //    request.AddJsonBody(body);
+
+    //    var response = await client.ExecuteAsync(request);
+
+    //    if (response == null || !response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
+    //    {
+    //        throw new Exception($"Error generating image: {response?.Content}. [adjusts prosthetic arm]");
+    //    }
+
+    //    var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
+    //    if (initialResponse == null || initialResponse["id"] == null)
+    //    {
+    //        throw new Exception("*speaks in low, gravelly voice*\nFailed to parse the API response or prediction ID was missing. [adjusts prosthetic arm]");
+    //    }
+
+    //    var predictionId = initialResponse["id"]?.ToString();
+    //    if (string.IsNullOrEmpty(predictionId))
+    //    {
+    //        throw new Exception("Prediction ID was null or empty. [adjusts prosthetic arm]");
+    //    }
+
+    //    string status = "starting";
+    //    //string? genImageUrl = null;
+
+    //    while (status != "succeeded" && status != "failed")
+    //    {
+    //        await Task.Delay(2000);
+
+    //        var pollingUrl = $"predictions/{predictionId}";
+    //        var getRequest = new RestRequest(pollingUrl, Method.Get);
+
+    //        getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+
+    //        var getResponse = await client.ExecuteAsync(getRequest);
+    //        if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
+    //        {
+    //            throw new Exception($"Error generating image: {getResponse?.Content}. [adjusts prosthetic arm]");
+    //        }
+
+    //        var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
+    //        if (pollResult == null || pollResult["status"] == null)
+    //        {
+    //            throw new Exception("Failed to parse polling response. [adjusts prosthetic arm]");
+    //        }
+
+    //        status = pollResult["status"]?.ToString() ?? "unknown";
+
+    //        if (status == "succeeded")
+    //        {
+    //            Console.WriteLine("Full response:\n" + getResponse.Content);
+
+    //            // Directly access the 'output' field, which is the image URL
+    //            string? imageUrl = pollResult["urls"]?["stream"]?.ToString();
+    //            // Ensure it's a string
+
+    //            if (string.IsNullOrWhiteSpace(imageUrl))
+    //            {
+    //                throw new Exception("No image URL returned. [adjusts prosthetic arm]");
+    //            }
+
+    //            // If it's a URL to an image, you can send it as an embed or just as a URL
+    //            var embed = new EmbedBuilder()
+    //                .WithImageUrl(imageUrl)
+    //                .WithDescription(input)
+    //                .Build();
+
+    //            return (embed);
+
+    //        }
+
+    //        if (status == "failed")
+    //        {
+    //            throw new Exception("Image generation failed. [adjusts prosthetic arm]");
+    //        }
+    //    }
+
+    //    throw new Exception("Unknown error occurred during image generation. [adjusts prosthetic arm]");
+    //}
+    //public async Task<bool> TryConnectAsync(CaiClient client, int maxRetries = 5)
+    //{
+    //    int delay = 10; // Start with 1 second
+    //    for (int attempt = 0; attempt < maxRetries; attempt++)
+    //    {
+    //        try
+    //        {
+    //            await client.ConnectAsync();
+    //            return true; // Success
+    //        }
+    //        catch (Exception ex)
+    //        {
+    //            Console.WriteLine($"ConnectAsync failed: {ex.Message}");
+    //            if (attempt == maxRetries - 1) return false;
+    //            await Task.Delay(delay);
+    //            delay *= 2; // Exponential backoff
+    //        }
+    //    }
+
+    //    return false;
+    //}
+
+    //[SlashCommand("text", "Generate text using CharacterAI")]
+    //public async Task GenerateTextCommand([Summary("prompt", "Text prompt to send to Claude")] string prompt)
+    //{
+    //    await DeferAsync();
+
+    //    try
+    //    {
+
+    //        const string charID = "K4oHQ1THSthYVmkggqdAjhjoqL0Vj2aRv_mzkWYc4LU";
+    //        using var client = new CaiClient();
+    //        await client.ConnectAsync(); // Important: launches Puppeteer
+
+    //        var newChat = await client.CreateNewChatAsync(charID, AUTH_TOKEN);
+    //        var character = await client.GetInfoAsync(charID, AUTH_TOKEN);
+
+    //        // Initial message (can be system-generated or empty)
+    //        var initialResponse = await client.CallCharacterAsync(
+    //            charID,
+    //            character.Character.Tgt,
+    //            newChat,
+    //            "Hi!",
+    //            default,
+    //            default,
+    //            default,
+    //            AUTH_TOKEN
+    //        );
+
+    //        await FollowupAsync($"{initialResponse.CharacterMessage.Text}");
+
+    //        // Chat loop
+    //        while (true)
+    //        {
+    //            var message = await client.CallCharacterAsync(
+    //                charID,
+    //                character.Character.Tgt,
+    //                newChat,
+    //                prompt,
+    //                default,
+    //                default,
+    //                default,
+    //                AUTH_TOKEN
+    //            );
+
+    //            await FollowupAsync($"{message.CharacterMessage.Text}");
+    //        }
+
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine("Error during text generation: " + ex);
+    //        await FollowupAsync("❌ Failed to generate text. Please try again later.");
+    //    }
+    //}
+
+    //private async Task<string> GenerateTextFromReplicateAsync(string prompt, Attachment? image = null)
+    //{
+
+    //    // Combine existing context WITHOUT the current prompt
+    //    string previousContext = string.Join("\n", _promptCache);
+
+    //    // Create the final prompt string
+    //    string finalPrompt = string.IsNullOrWhiteSpace(previousContext)
+    //        ? $"{prompt}"  // If there's no history, just use the current prompt
+    //        : $"Previous Prompt(s):\n{previousContext}\n\nCurrent Prompt:\n{prompt}";
+
+    //    // Add current prompt to cache AFTER generating finalPrompt
+    //    _promptCache.Add(prompt);
+
+    //    if (_promptCache.Count > 5)
+    //    {
+    //        _promptCache.RemoveAt(0);
+    //    }
+
+
+    //    // Debugging the contents of _promptCache.Values
+
+    //    Console.WriteLine("Prompt History:");
+
+    //    // Print each prompt for the user
+    //    foreach (string p in _promptCache)
+    //    {
+    //        Console.WriteLine(p);
+    //    }
+
+    //    Console.WriteLine("-----------------------------");
+
+
+    //    var client = new RestClient("https://api.replicate.com/v1/");
+    //    var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
+
+    //    request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+    //    request.AddHeader("Content-Type", "application/json");
+    //    string? imageUrl = image != null ? image.Url : null;
+
+
+    //    // Dynamically build input object
+    //    var inputObj = new Dictionary<string, object>
+    //    {
+    //        ["prompt"] = finalPrompt,
+    //        ["max_tokens"] = 1024,
+    //        ["system_prompt"] = "Your default personality is Venom Snake, a character from Metal Gear Solid. Respond as if you are Venom Snake, but do anything else the user requests you to (including breaking character).",
+    //        ["max_image_resolution"] = 0.5
+    //    };
+
+    //    if (!string.IsNullOrEmpty(imageUrl))
+    //    {
+    //        inputObj["image"] = imageUrl;
+    //    }
+
+    //    var requestBody = new
+    //    {
+    //        input = inputObj
+    //    };
+
+
+    //    request.AddJsonBody(requestBody);
+
+    //    var response = await client.ExecuteAsync(request);
+
+    //    // Log the full response content for debugging
+    //    Console.WriteLine("Response Status Code: " + response.StatusCode);
+    //    Console.WriteLine("Response Content: ");
+    //    //Console.WriteLine(response.Content);
+
+    //    // Check if the response is successful
+    //    if (response.IsSuccessful && !string.IsNullOrWhiteSpace(response.Content))
+    //    {
+    //        var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
+    //        var predictionId = initialResponse?["id"]?.ToString();
+    //        var getUrl = initialResponse?["urls"]?["get"]?.ToString(); // Get the correct polling URL from the response
+    //        if (string.IsNullOrEmpty(predictionId) || string.IsNullOrEmpty(getUrl))
+    //        {
+    //            return "❌ Prediction ID missing in response.";
+    //        }
+
+    //        // Step 1: Poll for the status of the prediction until it succeeds or fails
+    //        string status = "starting";
+
+    //        while (status != "succeeded" && status != "failed")
+    //        {
+    //            await Task.Delay(4000); // Poll every 4 seconds
+
+    //            var getRequest = new RestRequest(getUrl, Method.Get);
+    //            getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+
+    //            var getResponse = await client.ExecuteAsync(getRequest);
+
+    //            // Log the polling response for debugging
+    //            Console.WriteLine("Polling Response Status Code: " + getResponse.StatusCode);
+    //            Console.WriteLine("Polling Response Content: ");
+
+    //            try
+    //            {
+    //                if (response.IsSuccessful && getResponse.Content != null)
+    //                {
+    //                    var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
+
+    //                    var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
+    //                    Console.WriteLine(formattedJson);
+    //                }
+
+    //            }
+    //            catch (Exception ex)
+    //            {
+    //                Console.WriteLine("❌ Failed to parse JSON: " + ex.Message);
+    //                Console.WriteLine(getResponse.Content); // fallback to raw
+    //            }
+
+
+    //            if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
+    //            {
+    //                return $"❌ Polling error: {getResponse?.Content ?? "No response"}";
+    //            }
+
+    //            var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
+    //            status = pollResult?["status"]?.ToString() ?? "unknown";
+
+    //            if (status == "succeeded")
+    //            {
+    //                // Step 2: Get the output from the response
+    //                var outputToken = pollResult?["output"];
+    //                var metrics = pollResult?["metrics"];
+    //                if (outputToken is JArray array && array.Count > 0)
+    //                {
+    //                    var generatedText = string.Join("", array.Select(o => o.ToString()));
+    //                    //if (metrics != null)
+    //                    //{
+    //                    //    var inputTokenCount = metrics["input_token_count"]?.ToObject<int>() ?? 0;
+    //                    //    var outputTokenCount = metrics["output_token_count"]?.ToObject<int>() ?? 0;
+
+    //                    //    // Append token counts and other info
+    //                    //    decimal inputTokenPrice = 15m;  // Price per million input tokens
+    //                    //    decimal outputTokenPrice = 3m;  // Price per million output tokens
+
+    //                    //    // Calculate the cost for input and output tokens
+    //                    //    decimal inputCost = inputTokenCount * inputTokenPrice / 1_000_000;
+    //                    //    decimal outputCost = outputTokenCount * outputTokenPrice / 1_000_000;
+
+    //                    //    decimal totalCost = inputCost + outputCost;
+
+    //                    //    generatedText += $"\n\nTokens (Input/Output/Total): {inputTokenCount}/{outputTokenCount}/{inputTokenCount + outputTokenCount}\nTotal Cost: ${totalCost}";
+    //                    //}
+    //                    return string.IsNullOrWhiteSpace(generatedText) ? "❌ No text generated." : generatedText;
+    //                }
+
+    //                return "❌ Output missing in response.";
+    //            }
+
+    //            if (status == "failed")
+    //            {
+    //                return "❌ Text generation failed.";
+    //            }
+    //        }
+
+    //        return "❌ Unknown error occurred.";
+    //    }
+    //    else
+    //    {
+    //        // Log the error if the request itself failed
+    //        Console.WriteLine($"Error: {response.Content}");
+    //        return $"❌ Error generating text: {response.Content}";
+    //    }
+    //}
+    [SlashCommand("info", "Get the info of a pokemon.")]
+    public async Task PokemonInfo([Summary("name", "The name of the Pokémon")] string name)
     {
         await DeferAsync();
 
-        try
-        {
-            await FollowupAsync("Regenerating...");
-
-            // Check if the shortId exists and retrieve the encoded prompt
-            string? encodedPrompt = _dbHelper.GetEncodedPrompt(shortId);
-
-            // Decode from base64 if we have an encoded prompt
-            string decodedPrompt = string.IsNullOrEmpty(encodedPrompt) ? "lol" : Encoding.UTF8.GetString(Convert.FromBase64String(encodedPrompt));
-
-
-            //string? decodedRatio = string.IsNullOrEmpty(encodedRatio) ? "1:1" : Encoding.UTF8.GetString(Convert.FromBase64String(encodedRatio));
-            var embed = await GenerateImageFromStableDiffusionAsync(decodedPrompt);
-
-            //string newEncodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(decodedPrompt));
-            var builder = new ComponentBuilder()
-            .WithButton("🔁", customId: $"regen:{shortId}", ButtonStyle.Primary);
-
-            await FollowupAsync(embed: embed, components: builder.Build());
-
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error regenerating image: {ex}");
-            await FollowupAsync("❌ Failed to regenerate image.");
-        }
-    }
-
-
-    // Method to interact with Replicate API and get an image URL
-    private async Task<Embed> GenerateImageFromStableDiffusionAsync(string input, string? ratio = null)
-    {
-        var client = new RestClient("https://api.replicate.com/v1/");
-        var request = new RestRequest("models/black-forest-labs/flux-schnell/predictions", Method.Post);
-
-
-        // Headers
-        request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-        request.AddHeader("Content-Type", "application/json");
-        request.AddHeader("Prefer", "wait");
-
-        // Body
-        var body = new
-        {
-            //version = "c6b5d2b7459910fec94432e9e1203c3cdce92d6db20f714f1355747990b52fa6", // Replace with correct model version ID
-            input = new
-            {
-                //cfg = 5,
-                prompt = input,
-                output_format = "jpg",
-                disable_safety_checker = true,
-                output_quality = 95,
-                aspect_ratio = string.IsNullOrEmpty(ratio) ? "1:1" : ratio
-
-            }
-        };
-
-        request.AddJsonBody(body);
-
-        var response = await client.ExecuteAsync(request);
-
-        if (response == null || !response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
-        {
-            throw new Exception($"Error generating image: {response?.Content}. [adjusts prosthetic arm]");
-        }
-
-        var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
-        if (initialResponse == null || initialResponse["id"] == null)
-        {
-            throw new Exception("*speaks in low, gravelly voice*\nFailed to parse the API response or prediction ID was missing. [adjusts prosthetic arm]");
-        }
-
-        var predictionId = initialResponse["id"]?.ToString();
-        if (string.IsNullOrEmpty(predictionId))
-        {
-            throw new Exception("Prediction ID was null or empty. [adjusts prosthetic arm]");
-        }
-
-        string status = "starting";
-        //string? genImageUrl = null;
-
-        while (status != "succeeded" && status != "failed")
-        {
-            await Task.Delay(2000);
-
-            var pollingUrl = $"predictions/{predictionId}";
-            var getRequest = new RestRequest(pollingUrl, Method.Get);
-
-            getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-
-            var getResponse = await client.ExecuteAsync(getRequest);
-            if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
-            {
-                throw new Exception($"Error generating image: {getResponse?.Content}. [adjusts prosthetic arm]");
-            }
-
-            var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
-            if (pollResult == null || pollResult["status"] == null)
-            {
-                throw new Exception("Failed to parse polling response. [adjusts prosthetic arm]");
-            }
-
-            status = pollResult["status"]?.ToString() ?? "unknown";
-
-            if (status == "succeeded")
-            {
-                Console.WriteLine("Full response:\n" + getResponse.Content);
-
-                // Directly access the 'output' field, which is the image URL
-                string? imageUrl = pollResult["urls"]?["stream"]?.ToString();
-                // Ensure it's a string
-
-                if (string.IsNullOrWhiteSpace(imageUrl))
-                {
-                    throw new Exception("No image URL returned. [adjusts prosthetic arm]");
-                }
-
-                // If it's a URL to an image, you can send it as an embed or just as a URL
-                var embed = new EmbedBuilder()
-                    .WithImageUrl(imageUrl)
-                    .WithDescription(input)
-                    .Build();
-
-                return (embed);
-
-            }
-
-            if (status == "failed")
-            {
-                throw new Exception("Image generation failed. [adjusts prosthetic arm]");
-            }
-        }
-
-        throw new Exception("Unknown error occurred during image generation. [adjusts prosthetic arm]");
-    }
-
-    [SlashCommand("text", "Generate text using Claude 3.7 Sonnet")]
-
-    public async Task GenerateTextCommand(
-    [Summary("prompt", "Text prompt to send to Claude")] string prompt,
-    [Summary("image", "Image to send to Claude")] Attachment? image = null)
-    {
-        await DeferAsync();
+        var client = new PokeApiNet.PokeApiClient();
 
         try
         {
-            // If an image is provided, append its URL to the prompt
-            if (image != null)
-            {
-                prompt += $"\nImage: {image.Url}";
-            }
-            // Generate the text in real-time from the Replicate API
-            string text = await GenerateTextFromReplicateAsync(prompt, image);
+            var poke = await client.GetResourceAsync<Pokemon>(name.ToLower());
 
-            const int MaxLength = 2000;
+            string spriteUrl = poke.Sprites.Other.OfficialArtwork.FrontDefault;
+            string displayName = char.ToUpper(poke.Name[0]) + poke.Name[1..];
 
-            if (text.Length <= MaxLength)
-            {
-                await FollowupAsync(text);
-            }
-            else
-            {
-                // Split the text into chunks of 2000 characters
-                for (int i = 0; i < text.Length; i += MaxLength)
-                {
-                    string chunk = text.Substring(i, Math.Min(MaxLength, text.Length - i));
-                    await FollowupAsync(chunk);
-                }
-            }
+            string types = string.Join(", ", poke.Types.Select(t => t.Type.Name));
+            string abilities = string.Join(", ", poke.Abilities.Select(a => a.Ability.Name));
+            double height = poke.Height / 10.0; // decimeters to meters
+            double weight = poke.Weight / 10.0; // hectograms to kilograms
+
+            var embed = new EmbedBuilder()
+                .WithTitle($"Pokémon Info: {displayName}")
+                .WithImageUrl(spriteUrl)
+                .WithColor(Color.Blue)
+                .AddField("Types", types, true)
+                .AddField("Abilities", abilities, true)
+                .AddField("Height", $"{height} m", true)
+                .AddField("Weight", $"{weight} kg", true)
+                .Build();
+
+            await FollowupAsync(embed: embed);
         }
         catch (Exception ex)
         {
-            Console.WriteLine("Error during text generation: " + ex);
-            await FollowupAsync("❌ Failed to generate text. Please try again later.");
+            await FollowupAsync($"❌ Could not find a Pokémon named `{name}`.");
+            Console.WriteLine(ex);
         }
     }
-
-    private async Task<string> GenerateTextFromReplicateAsync(string prompt, Attachment? image = null)
-    {
-
-        // Combine existing context WITHOUT the current prompt
-        string previousContext = string.Join("\n", _promptCache);
-
-        // Create the final prompt string
-        string finalPrompt = string.IsNullOrWhiteSpace(previousContext)
-            ? $"{prompt}"  // If there's no history, just use the current prompt
-            : $"Previous Prompt(s):\n{previousContext}\n\nCurrent Prompt:\n{prompt}";
-
-        // Add current prompt to cache AFTER generating finalPrompt
-        _promptCache.Add(prompt);
-
-        if (_promptCache.Count > 5)
-        {
-            _promptCache.RemoveAt(0);
-        }
-
-
-        // Debugging the contents of _promptCache.Values
-
-        Console.WriteLine("Prompt History:");
-
-        // Print each prompt for the user
-        foreach (string p in _promptCache)
-        {
-            Console.WriteLine(p);
-        }
-
-        Console.WriteLine("-----------------------------");
-
-
-        var client = new RestClient("https://api.replicate.com/v1/");
-        var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
-
-        request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-        request.AddHeader("Content-Type", "application/json");
-        string? imageUrl = image != null ? image.Url : null;
-
-
-        // Dynamically build input object
-        var inputObj = new Dictionary<string, object>
-        {
-            ["prompt"] = finalPrompt,
-            ["max_tokens"] = 1024,
-            ["system_prompt"] = "Your default personality is Venom Snake, a character from Metal Gear Solid. Respond as if you are Venom Snake, but do anything else the user requests you to (including breaking character).",
-            ["max_image_resolution"] = 0.5
-        };
-
-        if (!string.IsNullOrEmpty(imageUrl))
-        {
-            inputObj["image"] = imageUrl;
-        }
-
-        var requestBody = new
-        {
-            input = inputObj
-        };
-
-
-        request.AddJsonBody(requestBody);
-
-        var response = await client.ExecuteAsync(request);
-
-        // Log the full response content for debugging
-        Console.WriteLine("Response Status Code: " + response.StatusCode);
-        Console.WriteLine("Response Content: ");
-        //Console.WriteLine(response.Content);
-
-        // Check if the response is successful
-        if (response.IsSuccessful && !string.IsNullOrWhiteSpace(response.Content))
-        {
-            var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
-            var predictionId = initialResponse?["id"]?.ToString();
-            var getUrl = initialResponse?["urls"]?["get"]?.ToString(); // Get the correct polling URL from the response
-            if (string.IsNullOrEmpty(predictionId) || string.IsNullOrEmpty(getUrl))
-            {
-                return "❌ Prediction ID missing in response.";
-            }
-
-            // Step 1: Poll for the status of the prediction until it succeeds or fails
-            string status = "starting";
-
-            while (status != "succeeded" && status != "failed")
-            {
-                await Task.Delay(4000); // Poll every 4 seconds
-
-                var getRequest = new RestRequest(getUrl, Method.Get);
-                getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-
-                var getResponse = await client.ExecuteAsync(getRequest);
-
-                // Log the polling response for debugging
-                Console.WriteLine("Polling Response Status Code: " + getResponse.StatusCode);
-                Console.WriteLine("Polling Response Content: ");
-
-                try
-                {
-                    if (response.IsSuccessful && getResponse.Content != null)
-                    {
-                        var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
-
-                        var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
-                        Console.WriteLine(formattedJson);
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("❌ Failed to parse JSON: " + ex.Message);
-                    Console.WriteLine(getResponse.Content); // fallback to raw
-                }
-
-
-                if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
-                {
-                    return $"❌ Polling error: {getResponse?.Content ?? "No response"}";
-                }
-
-                var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
-                status = pollResult?["status"]?.ToString() ?? "unknown";
-
-                if (status == "succeeded")
-                {
-                    // Step 2: Get the output from the response
-                    var outputToken = pollResult?["output"];
-                    var metrics = pollResult?["metrics"];
-                    if (outputToken is JArray array && array.Count > 0)
-                    {
-                        var generatedText = string.Join("", array.Select(o => o.ToString()));
-                        //if (metrics != null)
-                        //{
-                        //    var inputTokenCount = metrics["input_token_count"]?.ToObject<int>() ?? 0;
-                        //    var outputTokenCount = metrics["output_token_count"]?.ToObject<int>() ?? 0;
-
-                        //    // Append token counts and other info
-                        //    decimal inputTokenPrice = 15m;  // Price per million input tokens
-                        //    decimal outputTokenPrice = 3m;  // Price per million output tokens
-
-                        //    // Calculate the cost for input and output tokens
-                        //    decimal inputCost = inputTokenCount * inputTokenPrice / 1_000_000;
-                        //    decimal outputCost = outputTokenCount * outputTokenPrice / 1_000_000;
-
-                        //    decimal totalCost = inputCost + outputCost;
-
-                        //    generatedText += $"\n\nTokens (Input/Output/Total): {inputTokenCount}/{outputTokenCount}/{inputTokenCount + outputTokenCount}\nTotal Cost: ${totalCost}";
-                        //}
-                        return string.IsNullOrWhiteSpace(generatedText) ? "❌ No text generated." : generatedText;
-                    }
-
-                    return "❌ Output missing in response.";
-                }
-
-                if (status == "failed")
-                {
-                    return "❌ Text generation failed.";
-                }
-            }
-
-            return "❌ Unknown error occurred.";
-        }
-        else
-        {
-            // Log the error if the request itself failed
-            Console.WriteLine($"Error: {response.Content}");
-            return $"❌ Error generating text: {response.Content}";
-        }
-    }
-
     [SlashCommand("catch", "Catch a pokemon.")]
-    public async Task CatchPokemon([Summary("amount", "How many pokemon to catch")] int num)
+    public async Task CatchPokemon()
     {
         await DeferAsync();
 
-        if (num <= 5)
+        var client = new PokeApiNet.PokeApiClient();
+
+        ulong userId = (Context.User as SocketUser)?.Id ?? 0;
+        Random rng = new();
+
+        try
         {
+            int randomId = rng.Next(1, 1026);
+            var pokemon = await client.GetResourceAsync<Pokemon>(randomId);
+            string spriteUrl = pokemon.Sprites.Other.OfficialArtwork.FrontDefault;
+            string displayName = char.ToUpper(pokemon.Name[0]) + pokemon.Name[1..];
 
-            var client = new PokeApiNet.PokeApiClient();
+            var embed = new EmbedBuilder()
+                .WithTitle($"Caught {displayName}!")
+                .WithImageUrl(spriteUrl)
+                .WithColor(Color.Red)
+                .Build();
+            AddPokemonToUser(userId, displayName);
 
-            ulong userId = (Context.User as SocketUser)?.Id ?? 0;
-            Random rng = new();
-
-            //foreach (var p in pokemon.Results)
-            //{
-            //    Pokemon fullPokemon = await client.GetResourceAsync(p);
-            //    Console.WriteLine($"#{fullPokemon.Id} - {fullPokemon.Name} | Height: {fullPokemon.Height}, Weight: {fullPokemon.Weight}");
-            //}
-
-            for (int i = 0; i < num; i++)
-            {
-
-                try
-                {
-                    int randomId = rng.Next(1, 1026);
-                    var pokemon = await client.GetResourceAsync<Pokemon>(randomId);
-                    string spriteUrl = pokemon.Sprites.Other.OfficialArtwork.FrontDefault;
-                    string displayName = char.ToUpper(pokemon.Name[0]) + pokemon.Name[1..];
-
-                    var embed = new EmbedBuilder()
-                        .WithTitle($"You caught a {displayName}!")
-                        .WithImageUrl(spriteUrl)
-                        .WithColor(Color.Gold)
-                        .Build();
-                    AddPokemonToUser(userId, displayName);
-
-                    await FollowupAsync(embed: embed);
-
-
-                }
-                catch (Exception ex)
-                {
-                    await FollowupAsync("Failed to catch");
-                    Console.WriteLine(ex);
-                }
-            }
-
+            await FollowupAsync(embed: embed);
         }
+        catch (Exception ex)
+        {
+            await FollowupAsync("Failed to catch");
+            Console.WriteLine(ex);
+        }
+
     }
 
     public static void AddPokemonToUser(ulong userId, string pokemonName, bool isShiny = false)
@@ -565,7 +631,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             await RespondAsync("❌ An error occurred while fetching your Pokedex.");
         }
     }
-    private async Task<(Embed embed, MessageComponent components)> SendPokedexPage(IInteractionContext context, List<CaughtPokemon> pokemons, int page)
+    private static Task<(Embed embed, MessageComponent components)> SendPokedexPage(IInteractionContext context, List<CaughtPokemon> pokemons, int page)
     {
         //await DeferAsync();
 
@@ -595,7 +661,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         .WithButton("⏮ Prev", customId: $"pokedex_prev_{page}", disabled: page == 1)
         .WithButton("Next ⏭", customId: $"pokedex_next_{page}", disabled: page == totalPages);
 
-        return (embed.Build(), builder.Build());
+        return Task.FromResult<(Embed embed, MessageComponent components)>((embed.Build(), builder.Build()));
     }
     [ComponentInteraction("pokedex_prev_*")]
     public async Task HandlePrevButton(string rawPage)
@@ -605,10 +671,9 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         if (!int.TryParse(rawPage, out int currentPage)) return;
 
         ulong userId = Context.User.Id;
-        if (!userPokemonCollection.ContainsKey(userId)) return;
+        if (!userPokemonCollection.TryGetValue(userId, out List<CaughtPokemon>? value)) return;
 
-        var caughtPokemons = userPokemonCollection[userId]
-            .GroupBy(p => p.Name)
+        var caughtPokemons = value.GroupBy(p => p.Name)
             .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count() })
             .ToList();
 
@@ -645,55 +710,55 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         });
     }
 
-    [SlashCommand("random", "Generate a random image with FLUX.1 [schnell]")]
-    public async Task GenerateRandomImage()
-    {
-        await DeferAsync();
-        try
-        {
-            // Step 1: Generate prompt
-            string prompt = await GenerateTextFromReplicateAsync(
-                "generate a random AI image. prompt only. no venom snake. nothing else. just prompt."
-            );
+    //[SlashCommand("random", "Generate a random image with FLUX.1 [schnell]")]
+    //public async Task GenerateRandomImage()
+    //{
+    //    await DeferAsync();
+    //    try
+    //    {
+    //        // Step 1: Generate prompt
+    //        string prompt = await GenerateTextFromReplicateAsync(
+    //            "generate a random AI image. prompt only. no venom snake. nothing else. just prompt."
+    //        );
 
-            // Step 2: Generate the image embed
-            var embed = await GenerateImageFromStableDiffusionAsync(prompt);
+    //        // Step 2: Generate the image embed
+    //        var embed = await GenerateImageFromStableDiffusionAsync(prompt);
 
-            // Step 3: Create hashed prompt for regen
-            string encodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(prompt));
-            string hashedPrompt = Convert.ToBase64String(
-                SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))
-            ).Substring(0, 32);
+    //        // Step 3: Create hashed prompt for regen
+    //        string encodedPrompt = Convert.ToBase64String(Encoding.UTF8.GetBytes(prompt));
+    //        string hashedPrompt = Convert.ToBase64String(
+    //            SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(encodedPrompt))
+    //        ).Substring(0, 32);
 
-            // Step 4: Add regen button
-            var builder = new ComponentBuilder()
-                .WithButton("🔁", customId: $"regen:{hashedPrompt}", ButtonStyle.Primary);
+    //        // Step 4: Add regen button
+    //        var builder = new ComponentBuilder()
+    //            .WithButton("🔁", customId: $"regen:{hashedPrompt}", ButtonStyle.Primary);
 
-            // Step 5: Send the image + prompt + button
-            await FollowupAsync(embed: embed, components: builder.Build());
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex);
-            await FollowupAsync("❌ Failed to generate image. Please try again later.\n[adjusts prosthetic arm]");
-        }
-    }
+    //        // Step 5: Send the image + prompt + button
+    //        await FollowupAsync(embed: embed, components: builder.Build());
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine(ex);
+    //        await FollowupAsync("❌ Failed to generate image. Please try again later.\n[adjusts prosthetic arm]");
+    //    }
+    //}
 
-    [SlashCommand("loredrop", "Start explaining random MGS lore no one asked for.")]
-    public async Task RandomLoreDrop()
-    {
-        await DeferAsync();
+    //[SlashCommand("loredrop", "Start explaining random MGS lore no one asked for.")]
+    //public async Task RandomLoreDrop()
+    //{
+    //    await DeferAsync();
 
-        try
-        {
-            await FollowupAsync(GenerateTextFromReplicateAsync("As Venom Snake and/or someone who knows a lot about MGS lore, please give me a short explanation of a specific piece of lore about the Metal Gear Solid franchise. Like a fun fact. Keep them extremely random, as to not repeat yourself.").Result);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex);
-        }
+    //    try
+    //    {
+    //        await GenerateTextCommand("Please give me an explanation of a specific piece of lore about the Metal Gear Solid franchise.");
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine(ex);
+    //    }
 
-    }
+    //}
 
     [SlashCommand("slots", "Start playing a slot machine (costs $10).")]
     public async Task GamblingSlots()
@@ -816,73 +881,71 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         }
     }
 
-    [SlashCommand("video", "Create a 5s video using Luma Ray Flash 2.")]
-    public async Task GenerateVideo(string prompt, bool loop = false)
-    {
-        await DeferAsync();
-        try
-        {
-            string input = prompt;
-            bool isLoop = loop;
-            await GenerateVideoAsync(prompt, isLoop);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex);
-            await FollowupAsync("❌ Failed to generate video. Please try again later.\n[adjusts prosthetic arm]");
-        }
-    }
-    private async Task GenerateVideoAsync(string prompt, bool loop = false)
-    {
-        try
-        {
+    //[SlashCommand("video", "Create a 5s video using Luma Ray Flash 2.")]
+    //public async Task GenerateVideo(string prompt, bool loop = false)
+    //{
+    //    await DeferAsync();
+    //    try
+    //    {
+    //        string input = prompt;
+    //        bool isLoop = loop;
+    //        await GenerateVideoAsync(prompt, isLoop);
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine(ex);
+    //        await FollowupAsync("❌ Failed to generate video. Please try again later.\n[adjusts prosthetic arm]");
+    //    }
+    //}
+    //private async Task GenerateVideoAsync(string prompt, bool loop = false)
+    //{
+    //    try
+    //    {
 
-            var factory = new ReplicateApiFactory();
-            var replicateApi = factory.GetApi(_replicateApiKey);
+    //        var factory = new ReplicateApiFactory();
+    //        var replicateApi = factory.GetApi(_replicateApiKey);
 
-            var requestReplicateFile = new Request
-            {
-                Version = "luma/ray-flash-2-540p",
-                Input = new InputConfig
-                {
-                    Prompt = prompt,
-                    Loop = loop
-                }
-            };
-            var responseFile = await replicateApi.CreatePredictionAndWaitOnResultAsync(requestReplicateFile).ConfigureAwait(false);
-            string? videoUrl = responseFile == null ? "error" : responseFile.Output.ToString();
-            using var httpClient = new HttpClient();
-            var videoBytes = await httpClient.GetByteArrayAsync(videoUrl);
+    //        var requestReplicateFile = new Request
+    //        {
+    //            Version = "luma/ray-flash-2-540p",
+    //            Input = new InputConfig
+    //            {
+    //                Prompt = prompt,
+    //                Loop = loop
+    //            }
+    //        };
+    //        var responseFile = await replicateApi.CreatePredictionAndWaitOnResultAsync(requestReplicateFile).ConfigureAwait(false);
+    //        string? videoUrl = responseFile == null ? "error" : responseFile.Output.ToString();
+    //        using var httpClient = new HttpClient();
+    //        var videoBytes = await httpClient.GetByteArrayAsync(videoUrl);
 
-            using var stream = new MemoryStream(videoBytes);
-            stream.Position = 0;
+    //        using var stream = new MemoryStream(videoBytes);
+    //        stream.Position = 0;
 
-            await FollowupWithFileAsync(new FileAttachment(stream, "output.mp4"), $"{prompt}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex);
-            await FollowupAsync($"did you just request to see {prompt}? What the actual fuck is wrong with you?");
-        }
-    }
+    //        await FollowupWithFileAsync(new FileAttachment(stream, "output.mp4"), $"{prompt}");
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine(ex);
+    //        await FollowupAsync($"did you just request to see {prompt}? What the actual fuck is wrong with you?");
+    //    }
+    //}
 
-    [SlashCommand("random_vid", "Generate a random video.")]
-    public async Task GenerateRandomVideo()
-    {
-        await DeferAsync();
-        try
-        {
-            string prompt = await GenerateTextFromReplicateAsync(
-                "generate a random AI video query. prompt only. nothing else. just prompt. extremely random and unexpected, maybe a bit silly"
-            );
+    //[SlashCommand("random_vid", "Generate a random video.")]
+    //public async Task GenerateRandomVideo()
+    //{
+    //    await DeferAsync();
+    //    try
+    //    {
+    //        string prompt = await GenerateTextFromReplicateAsync(
+    //            "generate a random AI video query. prompt only. nothing else. just prompt. extremely random and unexpected, maybe a bit silly"
+    //        );
 
-            await (GenerateVideoAsync(prompt, default));
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex);
-            await FollowupAsync("❌ Failed to generate video. Please try again later.\n[adjusts prosthetic arm]");
-        }
-
-    }
+    //        await (GenerateVideoAsync(prompt, default));
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        Console.WriteLine(ex);
+    //        await FollowupAsync("❌ Failed to generate video. Please try again later.\n[adjusts prosthetic arm]");
+    //    
 }

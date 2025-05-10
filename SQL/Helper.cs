@@ -45,6 +45,13 @@ namespace DiscordBot.SQL
                 Money DECIMAL(10, 2),
                 LastUpdated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS JelqCache (
+                JelqId INTEGER PRIMARY KEY AUTOINCREMENT,
+                JelqDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                JelqAmount DOUBLE NOT NULL,
+                JelqAmountTotal DOUBLE
+            );
+           
         ";
             command.ExecuteNonQuery();
         }
@@ -112,6 +119,37 @@ namespace DiscordBot.SQL
 
             using var reader = command.ExecuteReader();
             return reader.Read() ? reader.GetString(0) : null;
+        }
+
+        public void saveJelq(DateTime date, double amt)
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+            INSERT INTO JelqCache (JelqDate, JelqAmount, JelqAmountTotal)
+            VALUES ($date, $jelq, COALESCE((SELECT SUM(JelqAmount) FROM JelqCache), 0) + $jelq);
+        ";
+            command.Parameters.AddWithValue("$date", date);
+            command.Parameters.AddWithValue("$jelq", amt);
+
+            command.ExecuteNonQuery();
+
+        }
+
+        public double getJelqTotal()
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+            SELECT SUM(JelqAmount) AS JelqAmountTotal
+            FROM JelqCache;
+        ";
+            using var reader = command.ExecuteReader();
+            return reader.Read() ? reader.GetDouble(0) : -1;
         }
     }
 }

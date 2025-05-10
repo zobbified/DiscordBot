@@ -49,7 +49,7 @@ namespace DiscordBot.Main
                 Console.WriteLine("❌ helper.db is missing.");
                 return;
             }
-
+            
             try
             {
                 // Try opening a SQLite connection instead of reading the file directly
@@ -68,9 +68,8 @@ namespace DiscordBot.Main
                 return;
             }
 
-
-                // Initialize the Discord client and command services
-                _client = new DiscordSocketClient(new DiscordSocketConfig
+            // Initialize the Discord client and command services
+            _client = new DiscordSocketClient(new DiscordSocketConfig
             {
                 GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers,
                 AlwaysDownloadUsers = true

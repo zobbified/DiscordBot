@@ -3,40 +3,46 @@ using Discord.Interactions;
 using Discord.WebSocket;
 using DiscordBot.Commands.Pokemon;
 using DiscordBot.SQL;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using PokeApiNet;
+//using Newtonsoft.Json;
+//using Newtonsoft.Json.Linq;
 using RestSharp;
 using System;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Serialization;
 using static System.Net.Mime.MediaTypeNames;
-//using Replicate.Net;
-//using Replicate.Net.Models;
-//using Replicate.Net.Client;
-//using Replicate.Net.Factory;
+using Replicate.Net;
+using Replicate.Net.Models;
+using Replicate.Net.Client;
+using Replicate.Net.Factory;
 //using Microsoft.Extensions.DependencyInjection;
-//using Replicate.Net.Interfaces;
+using Replicate.Net.Interfaces;
 using DiscordBot.Config;
 using System.Reactive.Linq;
 using System.Xml.Linq;
+using static System.Net.WebRequestMethods;
+using System.Text.Json;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
+using PokeApiNet;
+using System.Net.Http;
+using System.Net.Http.Json;
 
 [CommandContextType(InteractionContextType.BotDm, InteractionContextType.PrivateChannel)]
 [IntegrationType(ApplicationIntegrationType.UserInstall)]
 public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 {
     static bool firedFromJob = false;
-    //private readonly string _replicateApiKey = ConfigManager.Config.ReplicateToken;
+    private readonly string _replicateApiKey = ConfigManager.Config.ReplicateToken;
 
-    //private static readonly List<string> _promptCache = [];
+    private static readonly List<string> _promptCache = [];
     private static readonly Helper _dbHelper = new();
     public static readonly Dictionary<ulong, List<CaughtPokemon>> userPokemonCollection = [];
     private static readonly string[] Emojis = new string[]
     {
         "🍎", "🍊", "🍋", "🍉", "🍓", "🍒"
     };
-
+    private static readonly HttpClient _client = new HttpClient();
     //private const string AUTH_TOKEN = "383f83631e56a5560ef53d03ef397a2630446cf3";
 
     //[SlashCommand("hello", "Say hello back!")]
@@ -280,301 +286,365 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
     //    return false;
     //}
 
-    //[SlashCommand("text", "Generate text using CharacterAI")]
-    //public async Task GenerateTextCommand([Summary("prompt", "Text prompt to send to Claude")] string prompt)
-    //{
-    //    await DeferAsync();
-
-    //    try
-    //    {
-
-    //        const string charID = "K4oHQ1THSthYVmkggqdAjhjoqL0Vj2aRv_mzkWYc4LU";
-    //        using var client = new CaiClient();
-    //        await client.ConnectAsync(); // Important: launches Puppeteer
-
-    //        var newChat = await client.CreateNewChatAsync(charID, AUTH_TOKEN);
-    //        var character = await client.GetInfoAsync(charID, AUTH_TOKEN);
-
-    //        // Initial message (can be system-generated or empty)
-    //        var initialResponse = await client.CallCharacterAsync(
-    //            charID,
-    //            character.Character.Tgt,
-    //            newChat,
-    //            "Hi!",
-    //            default,
-    //            default,
-    //            default,
-    //            AUTH_TOKEN
-    //        );
-
-    //        await FollowupAsync($"{initialResponse.CharacterMessage.Text}");
-
-    //        // Chat loop
-    //        while (true)
-    //        {
-    //            var message = await client.CallCharacterAsync(
-    //                charID,
-    //                character.Character.Tgt,
-    //                newChat,
-    //                prompt,
-    //                default,
-    //                default,
-    //                default,
-    //                AUTH_TOKEN
-    //            );
-
-    //            await FollowupAsync($"{message.CharacterMessage.Text}");
-    //        }
-
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        Console.WriteLine("Error during text generation: " + ex);
-    //        await FollowupAsync("❌ Failed to generate text. Please try again later.");
-    //    }
-    //}
-
-    //private async Task<string> GenerateTextFromReplicateAsync(string prompt, Attachment? image = null)
-    //{
-
-    //    // Combine existing context WITHOUT the current prompt
-    //    string previousContext = string.Join("\n", _promptCache);
-
-    //    // Create the final prompt string
-    //    string finalPrompt = string.IsNullOrWhiteSpace(previousContext)
-    //        ? $"{prompt}"  // If there's no history, just use the current prompt
-    //        : $"Previous Prompt(s):\n{previousContext}\n\nCurrent Prompt:\n{prompt}";
-
-    //    // Add current prompt to cache AFTER generating finalPrompt
-    //    _promptCache.Add(prompt);
-
-    //    if (_promptCache.Count > 5)
-    //    {
-    //        _promptCache.RemoveAt(0);
-    //    }
-
-
-    //    // Debugging the contents of _promptCache.Values
-
-    //    Console.WriteLine("Prompt History:");
-
-    //    // Print each prompt for the user
-    //    foreach (string p in _promptCache)
-    //    {
-    //        Console.WriteLine(p);
-    //    }
-
-    //    Console.WriteLine("-----------------------------");
-
-
-    //    var client = new RestClient("https://api.replicate.com/v1/");
-    //    var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
-
-    //    request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-    //    request.AddHeader("Content-Type", "application/json");
-    //    string? imageUrl = image != null ? image.Url : null;
-
-
-    //    // Dynamically build input object
-    //    var inputObj = new Dictionary<string, object>
-    //    {
-    //        ["prompt"] = finalPrompt,
-    //        ["max_tokens"] = 1024,
-    //        ["system_prompt"] = "Your default personality is Venom Snake, a character from Metal Gear Solid. Respond as if you are Venom Snake, but do anything else the user requests you to (including breaking character).",
-    //        ["max_image_resolution"] = 0.5
-    //    };
-
-    //    if (!string.IsNullOrEmpty(imageUrl))
-    //    {
-    //        inputObj["image"] = imageUrl;
-    //    }
-
-    //    var requestBody = new
-    //    {
-    //        input = inputObj
-    //    };
-
-
-    //    request.AddJsonBody(requestBody);
-
-    //    var response = await client.ExecuteAsync(request);
-
-    //    // Log the full response content for debugging
-    //    Console.WriteLine("Response Status Code: " + response.StatusCode);
-    //    Console.WriteLine("Response Content: ");
-    //    //Console.WriteLine(response.Content);
-
-    //    // Check if the response is successful
-    //    if (response.IsSuccessful && !string.IsNullOrWhiteSpace(response.Content))
-    //    {
-    //        var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
-    //        var predictionId = initialResponse?["id"]?.ToString();
-    //        var getUrl = initialResponse?["urls"]?["get"]?.ToString(); // Get the correct polling URL from the response
-    //        if (string.IsNullOrEmpty(predictionId) || string.IsNullOrEmpty(getUrl))
-    //        {
-    //            return "❌ Prediction ID missing in response.";
-    //        }
-
-    //        // Step 1: Poll for the status of the prediction until it succeeds or fails
-    //        string status = "starting";
-
-    //        while (status != "succeeded" && status != "failed")
-    //        {
-    //            await Task.Delay(4000); // Poll every 4 seconds
-
-    //            var getRequest = new RestRequest(getUrl, Method.Get);
-    //            getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-
-    //            var getResponse = await client.ExecuteAsync(getRequest);
-
-    //            // Log the polling response for debugging
-    //            Console.WriteLine("Polling Response Status Code: " + getResponse.StatusCode);
-    //            Console.WriteLine("Polling Response Content: ");
-
-    //            try
-    //            {
-    //                if (response.IsSuccessful && getResponse.Content != null)
-    //                {
-    //                    var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
-
-    //                    var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
-    //                    Console.WriteLine(formattedJson);
-    //                }
-
-    //            }
-    //            catch (Exception ex)
-    //            {
-    //                Console.WriteLine("❌ Failed to parse JSON: " + ex.Message);
-    //                Console.WriteLine(getResponse.Content); // fallback to raw
-    //            }
-
-
-    //            if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
-    //            {
-    //                return $"❌ Polling error: {getResponse?.Content ?? "No response"}";
-    //            }
-
-    //            var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
-    //            status = pollResult?["status"]?.ToString() ?? "unknown";
-
-    //            if (status == "succeeded")
-    //            {
-    //                // Step 2: Get the output from the response
-    //                var outputToken = pollResult?["output"];
-    //                var metrics = pollResult?["metrics"];
-    //                if (outputToken is JArray array && array.Count > 0)
-    //                {
-    //                    var generatedText = string.Join("", array.Select(o => o.ToString()));
-    //                    //if (metrics != null)
-    //                    //{
-    //                    //    var inputTokenCount = metrics["input_token_count"]?.ToObject<int>() ?? 0;
-    //                    //    var outputTokenCount = metrics["output_token_count"]?.ToObject<int>() ?? 0;
-
-    //                    //    // Append token counts and other info
-    //                    //    decimal inputTokenPrice = 15m;  // Price per million input tokens
-    //                    //    decimal outputTokenPrice = 3m;  // Price per million output tokens
-
-    //                    //    // Calculate the cost for input and output tokens
-    //                    //    decimal inputCost = inputTokenCount * inputTokenPrice / 1_000_000;
-    //                    //    decimal outputCost = outputTokenCount * outputTokenPrice / 1_000_000;
-
-    //                    //    decimal totalCost = inputCost + outputCost;
-
-    //                    //    generatedText += $"\n\nTokens (Input/Output/Total): {inputTokenCount}/{outputTokenCount}/{inputTokenCount + outputTokenCount}\nTotal Cost: ${totalCost}";
-    //                    //}
-    //                    return string.IsNullOrWhiteSpace(generatedText) ? "❌ No text generated." : generatedText;
-    //                }
-
-    //                return "❌ Output missing in response.";
-    //            }
-
-    //            if (status == "failed")
-    //            {
-    //                return "❌ Text generation failed.";
-    //            }
-    //        }
-
-    //        return "❌ Unknown error occurred.";
-    //    }
-    //    else
-    //    {
-    //        // Log the error if the request itself failed
-    //        Console.WriteLine($"Error: {response.Content}");
-    //        return $"❌ Error generating text: {response.Content}";
-    //    }
-    //}
-    [SlashCommand("info", "Get the info of a pokemon.")]
-    public async Task PokemonInfo([Summary("name", "The name of the Pokémon")] string name)
+    [SlashCommand("text", "Generate text using Claude 3.7 Sonnet")]
+    public async Task GenerateTextCommand(
+    [Summary("prompt", "Text prompt to send to Claude")] string prompt,
+    [Summary("image", "Image to send to Claude")] Attachment? image = null)
     {
         await DeferAsync();
 
-        var client = new PokeApiNet.PokeApiClient();
-
         try
         {
-            var poke = await client.GetResourceAsync<Pokemon>(name.ToLower());
+            // If an image is provided, append its URL to the prompt
+            if (image != null)
+            {
+                prompt += $"\nImage: {image.Url}";
+            }
+            // Generate the text in real-time from the Replicate API
+            string text = await GenerateTextFromReplicateAsync(prompt, image);
 
-            string spriteUrl = poke.Sprites.Other.OfficialArtwork.FrontDefault;
-            string displayName = char.ToUpper(poke.Name[0]) + poke.Name[1..];
+            const int MaxLength = 2000;
 
-            string types = string.Join(", ", poke.Types.Select(t => t.Type.Name));
-            string abilities = string.Join(", ", poke.Abilities.Select(a => a.Ability.Name));
-            double height = poke.Height / 10.0; // decimeters to meters
-            double weight = poke.Weight / 10.0; // hectograms to kilograms
-
-            var embed = new EmbedBuilder()
-                .WithTitle($"Pokémon Info: {displayName}")
-                .WithImageUrl(spriteUrl)
-                .WithColor(Color.Blue)
-                .AddField("Types", types, true)
-                .AddField("Abilities", abilities, true)
-                .AddField("Height", $"{height} m", true)
-                .AddField("Weight", $"{weight} kg", true)
-                .Build();
-
-            await FollowupAsync(embed: embed);
+            if (text.Length <= MaxLength)
+            {
+                await FollowupAsync(text);
+            }
+            else
+            {
+                // Split the text into chunks of 2000 characters
+                for (int i = 0; i < text.Length; i += MaxLength)
+                {
+                    string chunk = text.Substring(i, Math.Min(MaxLength, text.Length - i));
+                    await FollowupAsync(chunk);
+                }
+            }
         }
         catch (Exception ex)
         {
-            await FollowupAsync($"❌ Could not find a Pokémon named `{name}`.");
-            Console.WriteLine(ex);
+            Console.WriteLine("Error during text generation: " + ex);
+            await FollowupAsync("❌ Failed to generate text. Please try again later.");
+        }
+    }
+
+    private async Task<string> GenerateTextFromReplicateAsync(string prompt, Attachment? image = null)
+    {
+
+        // Combine existing context WITHOUT the current prompt
+        string previousContext = string.Join("\n", _promptCache);
+
+        // Create the final prompt string
+        string finalPrompt = string.IsNullOrWhiteSpace(previousContext)
+            ? $"{prompt}"  // If there's no history, just use the current prompt
+            : $"Previous Prompt: {previousContext}\nCurrent Prompt: {prompt}";
+
+        // Add current prompt to cache AFTER generating finalPrompt
+        _promptCache.Add(prompt);
+
+        if (_promptCache.Count > 1)
+        {
+            _promptCache.RemoveAt(0);
+        }
+
+
+        // Debugging the contents of _promptCache.Values
+
+        Console.WriteLine("Prompt History:");
+
+        // Print each prompt for the user
+        foreach (string p in _promptCache)
+        {
+            Console.WriteLine(p);
+        }
+
+        Console.WriteLine("-----------------------------");
+
+
+        var client = new RestClient("https://api.replicate.com/v1/");
+        var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
+
+        request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+        request.AddHeader("Content-Type", "application/json");
+        string? imageUrl = image != null ? image.Url : null;
+
+
+        // Dynamically build input object
+        var inputObj = new Dictionary<string, object>
+        {
+            ["prompt"] = finalPrompt,
+            ["max_tokens"] = 1024,
+            ["system_prompt"] = "Your default personality is ZobbifAI, a helpful AI assistant designed for Discord. Do anything the user requests you to (including imitating other characters).",
+            ["max_image_resolution"] = 0.5
+        };
+
+        if (!string.IsNullOrEmpty(imageUrl))
+        {
+            inputObj["image"] = imageUrl;
+        }
+
+        var requestBody = new
+        {
+            input = inputObj
+        };
+
+
+        request.AddJsonBody(requestBody);
+
+        var response = await client.ExecuteAsync(request);
+
+        // Log the full response content for debugging
+        Console.WriteLine("Response Status Code: " + response.StatusCode);
+        Console.WriteLine("Response Content: ");
+        //Console.WriteLine(response.Content);
+
+        // Check if the response is successful
+        if (response.IsSuccessful && !string.IsNullOrWhiteSpace(response.Content))
+        {
+            var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
+            var predictionId = initialResponse?["id"]?.ToString();
+            var getUrl = initialResponse?["urls"]?["get"]?.ToString(); // Get the correct polling URL from the response
+            if (string.IsNullOrEmpty(predictionId) || string.IsNullOrEmpty(getUrl))
+            {
+                return "❌ Prediction ID missing in response.";
+            }
+
+            // Step 1: Poll for the status of the prediction until it succeeds or fails
+            string status = "starting";
+
+            while (status != "succeeded" && status != "failed")
+            {
+                await Task.Delay(4000); // Poll every 4 seconds
+
+                var getRequest = new RestRequest(getUrl, Method.Get);
+                getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+
+                var getResponse = await client.ExecuteAsync(getRequest);
+
+                // Log the polling response for debugging
+                Console.WriteLine("Polling Response Status Code: " + getResponse.StatusCode);
+                Console.WriteLine("Polling Response Content: ");
+
+                try
+                {
+                    if (response.IsSuccessful && getResponse.Content != null)
+                    {
+                        var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
+
+                        var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
+                        Console.WriteLine(formattedJson);
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("❌ Failed to parse JSON: " + ex.Message);
+                    Console.WriteLine(getResponse.Content); // fallback to raw
+                }
+
+
+                if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
+                {
+                    return $"❌ Polling error: {getResponse?.Content ?? "No response"}";
+                }
+
+                var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
+                status = pollResult?["status"]?.ToString() ?? "unknown";
+
+                if (status == "succeeded")
+                {
+                    // Step 2: Get the output from the response
+                    var outputToken = pollResult?["output"];
+                    var metrics = pollResult?["metrics"];
+                    if (outputToken is JArray array && array.Count > 0)
+                    {
+                        var generatedText = string.Join("", array.Select(o => o.ToString()));
+                        //if (metrics != null)
+                        //{
+                        //    var inputTokenCount = metrics["input_token_count"]?.ToObject<int>() ?? 0;
+                        //    var outputTokenCount = metrics["output_token_count"]?.ToObject<int>() ?? 0;
+
+                        //    // Append token counts and other info
+                        //    decimal inputTokenPrice = 15m;  // Price per million input tokens
+                        //    decimal outputTokenPrice = 3m;  // Price per million output tokens
+
+                        //    // Calculate the cost for input and output tokens
+                        //    decimal inputCost = inputTokenCount * inputTokenPrice / 1_000_000;
+                        //    decimal outputCost = outputTokenCount * outputTokenPrice / 1_000_000;
+
+                        //    decimal totalCost = inputCost + outputCost;
+
+                        //    generatedText += $"\n\nTokens (Input/Output/Total): {inputTokenCount}/{outputTokenCount}/{inputTokenCount + outputTokenCount}\nTotal Cost: ${totalCost}";
+                        //}
+                        return string.IsNullOrWhiteSpace(generatedText) ? "❌ No text generated." : generatedText;
+                    }
+
+                    return "❌ Output missing in response.";
+                }
+
+                if (status == "failed")
+                {
+                    return $"❌ Text generation failed: {response.Content}";
+                }
+            }
+
+            return "❌ Unknown error occurred.";
+        }
+        else
+        {
+            // Log the error if the request itself failed
+            Console.WriteLine($"Error: {response.Content}");
+            return $"❌ Error generating text: {response.Content}";
         }
     }
     [SlashCommand("catch", "Catch a pokemon.")]
-    public async Task CatchPokemon()
+    public async Task CatchPokemon([Summary("name", "The name of the Pokémon")] string? name = null)
     {
         await DeferAsync();
 
-        var client = new PokeApiNet.PokeApiClient();
-
-        ulong userId = (Context.User as SocketUser)?.Id ?? 0;
-        Random rng = new();
-
         try
         {
-            int randomId = rng.Next(1, 1026);
-            var pokemon = await client.GetResourceAsync<Pokemon>(randomId);
-            string spriteUrl = pokemon.Sprites.Other.OfficialArtwork.FrontDefault;
-            string displayName = char.ToUpper(pokemon.Name[0]) + pokemon.Name[1..];
+            string url;
+            if (name != null)
+            {
+                url = $"https://pokeapi.co/api/v2/pokemon/{name.ToLower()}";
+            }
+            else
+            {
+                Random rng = new Random();
+                int randomId = rng.Next(0, 1026);
+                url = $"https://pokeapi.co/api/v2/pokemon/{randomId}";
+            }
+
+            var response = await _client.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                await FollowupAsync("❌ Pokémon not found.");
+                return;
+            }
+
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("name", out var nameProp))
+            {
+                await FollowupAsync("❌ Pokémon not found.");
+                return;
+            }
+
+            string pokeName = nameProp.GetString() ?? "Unknown";
+            int id = root.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : -1;
+            int baseXp = root.TryGetProperty("base_experience", out var xpProp) ? xpProp.GetInt32() : 0;
+
+            string typeStr = "Unknown";
+            if (root.TryGetProperty("types", out var typesProp))
+            {
+                var typeNames = typesProp.EnumerateArray()
+                    .Select(t => t.GetProperty("type").GetProperty("name").GetString())
+                    .Where(n => n != null);
+                typeStr = string.Join(", ", typeNames);
+            }
+
+            string abilityStr = "None";
+            if (root.TryGetProperty("abilities", out var abilitiesProp))
+            {
+                var abilityNames = abilitiesProp.EnumerateArray()
+                    .Select(a => a.GetProperty("ability").GetProperty("name").GetString())
+                    .Where(n => n != null);
+                abilityStr = string.Join(", ", abilityNames);
+                if (abilityStr.Length > 1024) abilityStr = abilityStr[..1021] + "...";
+            }
+
+            string spriteUrl = "";
+            if (root.TryGetProperty("sprites", out var spritesProp) &&
+                spritesProp.TryGetProperty("other", out var otherProp) &&
+                otherProp.TryGetProperty("official-artwork", out var homeProp) &&
+                homeProp.TryGetProperty("front_default", out var spriteProp))
+            {
+                spriteUrl = spriteProp.GetString() ?? "";
+            }
+
+            string speciesUrl = "";
+            if (root.TryGetProperty("species", out var speciesProp) &&
+                speciesProp.TryGetProperty("url", out var urlProp))
+            {
+                speciesUrl = urlProp.GetString() ?? "";
+            }
+
+            string generation = "Unknown";
+            string evoChainUrl = "";
+            if (!string.IsNullOrEmpty(speciesUrl))
+            {
+                var speciesResponse = await _client.GetAsync(speciesUrl);
+                if (speciesResponse.IsSuccessStatusCode)
+                {
+                    using var speciesDoc = JsonDocument.Parse(await speciesResponse.Content.ReadAsStringAsync());
+                    var speciesRoot = speciesDoc.RootElement;
+
+                    if (speciesRoot.TryGetProperty("generation", out var genProp) &&
+                        genProp.TryGetProperty("name", out var genName))
+                    {
+                        generation = genName.GetString() ?? "Unknown";
+                    }
+
+                    if (speciesRoot.TryGetProperty("evolution_chain", out var evoProp) &&
+                        evoProp.TryGetProperty("url", out var evoUrl))
+                    {
+                        evoChainUrl = evoUrl.GetString() ?? "";
+                    }
+                }
+            }
+
+            var evoNames = new List<string>();
+            if (!string.IsNullOrWhiteSpace(evoChainUrl))
+            {
+                var evoResponse = await _client.GetAsync(evoChainUrl);
+                if (evoResponse.IsSuccessStatusCode)
+                {
+                    using var evoDoc = JsonDocument.Parse(await evoResponse.Content.ReadAsStringAsync());
+                    if (evoDoc.RootElement.TryGetProperty("chain", out var chainRoot))
+                    {
+                        void Traverse(JsonElement node)
+                        {
+                            string evoName = node.TryGetProperty("species", out var speciesNode) &&
+                                             speciesNode.TryGetProperty("name", out var nameNode)
+                                             ? nameNode.GetString() ?? "Unknown"
+                                             : "Unknown";
+                            evoNames.Add(evoName);
+                            if (node.TryGetProperty("evolves_to", out var evolvesTo))
+                            {
+                                foreach (var next in evolvesTo.EnumerateArray())
+                                    Traverse(next);
+                            }
+                        }
+                        Traverse(chainRoot);
+                    }
+                }
+            }
+            if (evoNames.Count == 0) evoNames.Add("Unknown");
 
             var embed = new EmbedBuilder()
-                .WithTitle($"Caught {displayName}!")
+                .WithTitle($"{pokeName.ToUpper()} #{id} ({generation.Replace("-", " ").ToUpper()})")
+                .WithDescription($"**Type:** {typeStr.ToUpper()}\n**Base XP:** {baseXp}")
                 .WithImageUrl(spriteUrl)
-                .WithColor(Color.Red)
+                .AddField("Abilities", abilityStr.ToUpper(), inline: true)
+                .AddField("Evolution Chain", string.Join(" → ", evoNames).ToUpper(), inline: true)
+                .WithColor(Color.Gold)
+                .WithFooter(footer => footer.Text = $"Requested by {Context.User.Username}")
                 .Build();
-            AddPokemonToUser(userId, displayName);
+
+            if (name == null)
+            { AddPokemonToUser(Context.User.Id, pokeName, false, spriteUrl); }
 
             await FollowupAsync(embed: embed);
         }
         catch (Exception ex)
         {
-            await FollowupAsync("Failed to catch");
-            Console.WriteLine(ex);
+            Console.WriteLine($"[ERROR] {ex}");
+            await FollowupAsync("❌ Something went wrong. Try again or check the Pokémon name.");
         }
-
     }
 
-    public static void AddPokemonToUser(ulong userId, string pokemonName, bool isShiny = false)
+
+    public static void AddPokemonToUser(ulong userId, string pokemonName, bool isShiny = false, string? imageUrl = null)
     {
         if (!userPokemonCollection.ContainsKey(userId))
             userPokemonCollection[userId] = new List<CaughtPokemon>();
@@ -583,13 +653,121 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         {
             Name = pokemonName,
             IsShiny = isShiny,
-            CaughtAt = DateTime.UtcNow
+            CaughtAt = DateTime.UtcNow,
+            ImageUrl = imageUrl
         });
+    }
+
+    [SlashCommand("pack", "Open a random Pokémon pack ($1000)")]
+    public async Task OpenPack()
+    {
+        await DeferAsync();
+
+        if (_dbHelper.GetMoneyDecimal(Context.User.Id) < 1000)
+        {
+            await FollowupAsync("Broke boy :skull:");
+            return;
+        }
+        _dbHelper.SaveMoney(Context.User.Id, -1000);
+
+        var rand = new Random();
+        var cards = new List<Embed>();
+
+        for (int i = 0; i < 5; i++)
+        {
+            int pokemonId = rand.Next(1, 1026);
+            var url = $"https://pokeapi.co/api/v2/pokemon/{pokemonId}";
+            var response = await _client.GetAsync(url);
+            if (!response.IsSuccessStatusCode) continue;
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("name", out var nameProp)) continue;
+            string name = nameProp.GetString() ?? "Unknown";
+            bool isShiny = rand.NextDouble() < 0.01;
+
+            string imageUrl = "";
+            if (root.TryGetProperty("sprites", out var spritesProp) &&
+                spritesProp.TryGetProperty("other", out var otherProp) &&
+                otherProp.TryGetProperty("official-artwork", out var artProp))
+            {
+                if (isShiny && artProp.TryGetProperty("front_shiny", out var shinyProp))
+                {
+                    imageUrl = shinyProp.GetString() ?? "";
+                }
+                else if (artProp.TryGetProperty("front_default", out var defaultProp))
+                {
+                    imageUrl = defaultProp.GetString() ?? "";
+                }
+            }
+
+            AddPokemonToUser(Context.User.Id, name, isShiny, imageUrl);
+
+            var embed = new EmbedBuilder()
+                .WithTitle($"{(isShiny ? "✨ Shiny " : "")}#{pokemonId} {name.ToUpper()}")
+                .WithImageUrl(imageUrl)
+                .WithColor(isShiny ? Color.Magenta : Color.Blue)
+                .WithFooter($"Card {cards.Count + 1} of 5")
+                .Build();
+
+            cards.Add(embed);
+        }
+
+        if (cards.Count == 0)
+        {
+            await FollowupAsync("❌ Failed to open the pack.");
+            return;
+        }
+
+        var component = new ComponentBuilder()
+            .WithButton("Previous", customId: "pack_prev", disabled: true)
+            .WithButton("Next", customId: "pack_next", style: ButtonStyle.Primary)
+            .Build();
+
+        await ModifyOriginalResponseAsync(msg =>
+        {
+            msg.Embed = cards[0];
+            msg.Components = component;
+        });
+
+        int index = 0;
+
+        async Task HandleInteraction(SocketMessageComponent interaction)
+        {
+            if (interaction.User.Id != Context.User.Id) return;
+
+            await interaction.DeferAsync();
+
+            if (interaction.Data.CustomId == "pack_next")
+            {
+                index += 1;
+            }
+            else if (interaction.Data.CustomId == "pack_prev")
+            {
+                index -= 1;
+            }
+
+            var newComponent = new ComponentBuilder()
+                .WithButton("Previous", "pack_prev", disabled: index == 0)
+                .WithButton("Next", "pack_next", disabled: index == cards.Count - 1)
+                .Build();
+
+            await interaction.ModifyOriginalResponseAsync(msg =>
+            {
+                msg.Embed = cards[index];
+                msg.Components = newComponent;
+            });
+        }
+
+        Context.Client.ButtonExecuted += HandleInteraction;
+        _ = Task.Delay(TimeSpan.FromMinutes(2)).ContinueWith(_ => Context.Client.ButtonExecuted -= HandleInteraction);
     }
 
 
 
-    [SlashCommand("pokedex", "View your caught Pokémon.")]
+[SlashCommand("pokedex", "View your caught Pokémon.")]
     public async Task Pokedex()
     {
         await DeferAsync();
@@ -611,7 +789,8 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
                         Name = g.Key,
                         Count = g.Count(),
                         IsShiny = g.Any(p => p.IsShiny), // or determine this based on your logic
-                        CaughtAt = g.Min(p => p.CaughtAt) // optional
+                        CaughtAt = g.Min(p => p.CaughtAt), // optional
+                        ImageUrl = g.Max(p => p.ImageUrl)
                     })
                     .ToList();
 
@@ -650,7 +829,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
         foreach (var p in paginated)
         {
-            embed.AddField(p.Name, $"Caught: {p.Count}", inline: false);
+            embed.AddField(p.Name.ToUpper(), $"Quantity: {p.Count}", inline: false);
         }
 
         if (paginated.Count == 0)
@@ -674,7 +853,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         if (!userPokemonCollection.TryGetValue(userId, out List<CaughtPokemon>? value)) return;
 
         var caughtPokemons = value.GroupBy(p => p.Name)
-            .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count() })
+            .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count(), ImageUrl = g.Max(p => p.ImageUrl) })
             .ToList();
 
         var page = currentPage - 1;
@@ -698,7 +877,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
         var caughtPokemons = userPokemonCollection[userId]
             .GroupBy(p => p.Name)
-            .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count() })
+            .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count(), ImageUrl = g.Max(p => p.ImageUrl) })
             .ToList();
 
         var page = currentPage + 1;

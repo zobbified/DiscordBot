@@ -32,9 +32,11 @@ namespace DiscordBot.SQL
         {
             using var connection = new SqliteConnection($"Data Source={_dbPath}");
             connection.Open();
+            //DROP TABLE IF EXISTS CachePokemon;
 
             var command = connection.CreateCommand();
             command.CommandText = @"
+
             CREATE TABLE IF NOT EXISTS PromptCache (
                 HashedPrompt TEXT PRIMARY KEY,
                 EncodedPrompt TEXT NOT NULL,
@@ -51,10 +53,98 @@ namespace DiscordBot.SQL
                 JelqAmount DOUBLE NOT NULL,
                 JelqAmountTotal DOUBLE
             );
-           
-        ";
+            CREATE TABLE IF NOT EXISTS CachePokemon (
+                UserID INTEGER NOT NULL,
+                PokeName TEXT NOT NULL,
+                PokeAmt INTEGER DEFAULT 0,
+                PokeCaught BOOLEAN DEFAULT 0,
+                PokeImg TEXT,
+                PRIMARY KEY (UserID, PokeName)
+            );
+            ";
             command.ExecuteNonQuery();
         }
+        public void SaveJelq(DateTime date, double amt)
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+INSERT INTO JelqCache (JelqDate, JelqAmount, JelqAmountTotal)
+VALUES ($date, $jelq, COALESCE((SELECT SUM(JelqAmount) FROM JelqCache), 0) + $jelq);
+";
+            command.Parameters.AddWithValue("$date", date);
+            command.Parameters.AddWithValue("$jelq", amt);
+
+            command.ExecuteNonQuery();
+
+        }
+        public double GetJelq()
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT SUM(JelqAmount) AS JelqAmountTotal
+FROM JelqCache;
+";
+            using var reader = command.ExecuteReader();
+            return reader.Read() ? reader.GetDouble(0) : -1;
+        }
+        public void SavePokemon(ulong userId, string pokemon, int amount, bool caught = true, string? image = null)
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+INSERT INTO CachePokemon (UserID, PokeName, PokeAmt, PokeCaught, PokeImg)
+VALUES ($id, $pk, $pka, $pkc, $pki)
+ON CONFLICT(UserID, PokeName) DO UPDATE SET
+PokeAmt = excluded.PokeAmt,
+PokeCaught = excluded.PokeCaught,
+PokeImg = excluded.PokeImg;
+";
+            command.Parameters.AddWithValue("$id", userId);
+            command.Parameters.AddWithValue("$pk", pokemon);
+            command.Parameters.AddWithValue("$pka", amount);
+            command.Parameters.AddWithValue("$pkc", caught ? 1 : 0); // SQLite uses 0/1 for booleans
+            command.Parameters.AddWithValue("$pki", image ?? (object)DBNull.Value);
+
+            command.ExecuteNonQuery();
+        }
+        public List<(string name, int amount, bool caught, string img)> GetPokemon(ulong userId)
+        {
+            var pokemons = new List<(string name, int amount, bool caught, string img)>();
+
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+        SELECT PokeName, PokeAmt, PokeCaught, PokeImg, 
+        FROM CachePokemon
+        WHERE UserID = $id
+        ORDER BY PokeName ASC;
+    ";
+            command.Parameters.AddWithValue("$id", userId);
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var name = reader.GetString(0);
+                var amt = reader.GetInt32(1);
+                var caught = reader.GetBoolean(2);
+                var img = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+
+                pokemons.Add((name, amt, caught, img));
+            }
+
+            return pokemons;
+        }
+
 
         public void SavePrompt(string hashedPrompt, string encodedPrompt)
         {
@@ -63,15 +153,29 @@ namespace DiscordBot.SQL
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-            INSERT OR REPLACE INTO PromptCache (HashedPrompt, EncodedPrompt)
-            VALUES ($hash, $encoded);
-        ";
+INSERT OR REPLACE INTO PromptCache (HashedPrompt, EncodedPrompt)
+VALUES ($hash, $encoded);
+";
             command.Parameters.AddWithValue("$hash", hashedPrompt);
             command.Parameters.AddWithValue("$encoded", encodedPrompt);
 
             command.ExecuteNonQuery();
         }
+        public string? GetPrompt(string hashedPrompt)
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
 
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT EncodedPrompt FROM PromptCache
+WHERE HashedPrompt = $hash;
+";
+            command.Parameters.AddWithValue("$hash", hashedPrompt);
+
+            using var reader = command.ExecuteReader();
+            return reader.Read() ? reader.GetString(0) : null;
+        }
         public void SaveMoney(ulong userID, decimal money)
         {
             using var connection = new SqliteConnection($"Data Source={_dbPath}");
@@ -79,77 +183,32 @@ namespace DiscordBot.SQL
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-            INSERT INTO GamblingCache (UserID, Money)
-            VALUES ($user, $money)
-            ON CONFLICT(UserID) DO UPDATE SET Money = Money + $money;
-        ";
+INSERT INTO GamblingCache (UserID, Money)
+VALUES ($user, $money)
+ON CONFLICT(UserID) DO UPDATE SET Money = Money + $money;
+";
             command.Parameters.AddWithValue("$user", userID);
             command.Parameters.AddWithValue("$money", Math.Round(money, 2));
 
             command.ExecuteNonQuery();
         }
 
-        public decimal GetMoneyDecimal(ulong userID)
+        public decimal GetMoney(ulong userID)
         {
             using var connection = new SqliteConnection($"Data Source={_dbPath}");
             connection.Open();
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-            SELECT Money FROM GamblingCache
-            WHERE UserID = $user;
-        ";
+SELECT Money FROM GamblingCache
+WHERE UserID = $user;
+";
             command.Parameters.AddWithValue("$user", userID);
 
             using var reader = command.ExecuteReader();
             return reader.Read() ? reader.GetDecimal(0) : 0;
         }
 
-        public string? GetEncodedPrompt(string hashedPrompt)
-        {
-            using var connection = new SqliteConnection($"Data Source={_dbPath}");
-            connection.Open();
 
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-            SELECT EncodedPrompt FROM PromptCache
-            WHERE HashedPrompt = $hash;
-        ";
-            command.Parameters.AddWithValue("$hash", hashedPrompt);
-
-            using var reader = command.ExecuteReader();
-            return reader.Read() ? reader.GetString(0) : null;
-        }
-
-        public void saveJelq(DateTime date, double amt)
-        {
-            using var connection = new SqliteConnection($"Data Source={_dbPath}");
-            connection.Open();
-
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-            INSERT INTO JelqCache (JelqDate, JelqAmount, JelqAmountTotal)
-            VALUES ($date, $jelq, COALESCE((SELECT SUM(JelqAmount) FROM JelqCache), 0) + $jelq);
-        ";
-            command.Parameters.AddWithValue("$date", date);
-            command.Parameters.AddWithValue("$jelq", amt);
-
-            command.ExecuteNonQuery();
-
-        }
-
-        public double getJelqTotal()
-        {
-            using var connection = new SqliteConnection($"Data Source={_dbPath}");
-            connection.Open();
-
-            var command = connection.CreateCommand();
-            command.CommandText = @"
-            SELECT SUM(JelqAmount) AS JelqAmountTotal
-            FROM JelqCache;
-        ";
-            using var reader = command.ExecuteReader();
-            return reader.Read() ? reader.GetDouble(0) : -1;
-        }
     }
 }

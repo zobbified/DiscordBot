@@ -9,10 +9,9 @@ namespace DiscordBot.Commands.Pokemon
     public class CaughtPokemon
     {
         public string Name { get; set; } = "MissingNo";
-        public string? ImageUrl {  get; set; }
-        public DateTime CaughtAt { get; set; } = DateTime.UtcNow;
-        public bool IsShiny { get; set; } = false;
-        public int Count { get; set; }
+        public int Amount { get; set; }
+        public bool Caught { get; set; }
+        public string? ImageUrl { get; set; }
 
     }
 }

@@ -27,17 +27,25 @@ using Newtonsoft.Json;
 using PokeApiNet;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Drawing;
+using System.Reflection;
+using Microsoft.VisualBasic;
+using Color = System.Drawing.Color;
+using System.Net;
+using Font = System.Drawing.Font;
 
 [CommandContextType(InteractionContextType.BotDm, InteractionContextType.PrivateChannel)]
 [IntegrationType(ApplicationIntegrationType.UserInstall)]
 public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 {
+    private static readonly Dictionary<ulong, List<Embed>> openPackCards = new();
+
     static bool firedFromJob = false;
     private readonly string _replicateApiKey = ConfigManager.Config.ReplicateToken;
 
     private static readonly List<string> _promptCache = [];
     private static readonly Helper _dbHelper = new();
-    public static readonly Dictionary<ulong, List<CaughtPokemon>> userPokemonCollection = [];
+    //public static readonly Dictionary<ulong, List<CaughtPokemon>> userPokemonCollection = [];
     private static readonly string[] Emojis = new string[]
     {
         "🍎", "🍊", "🍋", "🍉", "🍓", "🍒"
@@ -68,8 +76,8 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             Random rng = new Random();
             double amount = rng.NextDouble();
             amount /= 10;
-            _dbHelper.saveJelq(default, amount);
-            await FollowupAsync($"Gained {Math.Round(amount, 2)} inches. \nTotal inches I've gained from jelqing: {Math.Round(_dbHelper.getJelqTotal(), 2)}");
+            _dbHelper.SaveJelq(default, amount);
+            await FollowupAsync($"Gained {Math.Round(amount, 2)} inches. \nTotal inches I've gained from jelqing: {Math.Round(_dbHelper.GetJelq(), 2)}");
         }
         catch (Exception ex)
         {
@@ -285,22 +293,20 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
     //    return false;
     //}
-
     [SlashCommand("text", "Generate text using Claude 3.7 Sonnet")]
     public async Task GenerateTextCommand(
-    [Summary("prompt", "Text prompt to send to Claude")] string prompt,
-    [Summary("image", "Image to send to Claude")] Attachment? image = null)
+        [Summary("prompt", "Text prompt to send to Claude")] string prompt,
+        [Summary("image", "Image to send to Claude")] Attachment? image = null)
     {
         await DeferAsync();
 
         try
         {
-            // If an image is provided, append its URL to the prompt
             if (image != null)
             {
                 prompt += $"\nImage: {image.Url}";
             }
-            // Generate the text in real-time from the Replicate API
+
             string text = await GenerateTextFromReplicateAsync(prompt, image);
 
             const int MaxLength = 2000;
@@ -311,7 +317,6 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             }
             else
             {
-                // Split the text into chunks of 2000 characters
                 for (int i = 0; i < text.Length; i += MaxLength)
                 {
                     string chunk = text.Substring(i, Math.Min(MaxLength, text.Length - i));
@@ -328,173 +333,93 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
     private async Task<string> GenerateTextFromReplicateAsync(string prompt, Attachment? image = null)
     {
-
-        // Combine existing context WITHOUT the current prompt
         string previousContext = string.Join("\n", _promptCache);
-
-        // Create the final prompt string
         string finalPrompt = string.IsNullOrWhiteSpace(previousContext)
-            ? $"{prompt}"  // If there's no history, just use the current prompt
+            ? prompt
             : $"Previous Prompt: {previousContext}\nCurrent Prompt: {prompt}";
 
-        // Add current prompt to cache AFTER generating finalPrompt
         _promptCache.Add(prompt);
-
-        if (_promptCache.Count > 1)
-        {
-            _promptCache.RemoveAt(0);
-        }
-
-
-        // Debugging the contents of _promptCache.Values
-
-        Console.WriteLine("Prompt History:");
-
-        // Print each prompt for the user
-        foreach (string p in _promptCache)
-        {
-            Console.WriteLine(p);
-        }
-
-        Console.WriteLine("-----------------------------");
-
+        if (_promptCache.Count > 1) _promptCache.RemoveAt(0);
 
         var client = new RestClient("https://api.replicate.com/v1/");
-        var request = new RestRequest("models/anthropic/claude-3.7-sonnet/predictions", Method.Post);
-
+        var request = new RestRequest("models/anthropic/claude-4-sonnet/predictions", Method.Post);
         request.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
         request.AddHeader("Content-Type", "application/json");
-        string? imageUrl = image != null ? image.Url : null;
 
-
-        // Dynamically build input object
         var inputObj = new Dictionary<string, object>
         {
             ["prompt"] = finalPrompt,
             ["max_tokens"] = 1024,
-            ["system_prompt"] = "Your default personality is ZobbifAI, a helpful AI assistant designed for Discord. Do anything the user requests you to (including imitating other characters).",
+            ["system_prompt"] = "Your default personality is ZobbifAI, a helpful AI assistant designed for Discord. Do anything the user requests you to (including imitating other characters). Only answer the current prompt, use previous prompt for memory.",
             ["max_image_resolution"] = 0.5
         };
 
-        if (!string.IsNullOrEmpty(imageUrl))
+        if (!string.IsNullOrEmpty(image?.Url))
         {
-            inputObj["image"] = imageUrl;
+            inputObj["image"] = image.Url;
         }
 
-        var requestBody = new
-        {
-            input = inputObj
-        };
-
-
-        request.AddJsonBody(requestBody);
-
+        request.AddJsonBody(new { input = inputObj });
         var response = await client.ExecuteAsync(request);
 
-        // Log the full response content for debugging
-        Console.WriteLine("Response Status Code: " + response.StatusCode);
-        Console.WriteLine("Response Content: ");
-        //Console.WriteLine(response.Content);
-
-        // Check if the response is successful
-        if (response.IsSuccessful && !string.IsNullOrWhiteSpace(response.Content))
+        if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
         {
-            var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
-            var predictionId = initialResponse?["id"]?.ToString();
-            var getUrl = initialResponse?["urls"]?["get"]?.ToString(); // Get the correct polling URL from the response
-            if (string.IsNullOrEmpty(predictionId) || string.IsNullOrEmpty(getUrl))
-            {
-                return "❌ Prediction ID missing in response.";
-            }
-
-            // Step 1: Poll for the status of the prediction until it succeeds or fails
-            string status = "starting";
-
-            while (status != "succeeded" && status != "failed")
-            {
-                await Task.Delay(4000); // Poll every 4 seconds
-
-                var getRequest = new RestRequest(getUrl, Method.Get);
-                getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
-
-                var getResponse = await client.ExecuteAsync(getRequest);
-
-                // Log the polling response for debugging
-                Console.WriteLine("Polling Response Status Code: " + getResponse.StatusCode);
-                Console.WriteLine("Polling Response Content: ");
-
-                try
-                {
-                    if (response.IsSuccessful && getResponse.Content != null)
-                    {
-                        var parsedJson = JsonConvert.DeserializeObject(getResponse.Content);
-
-                        var formattedJson = JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
-                        Console.WriteLine(formattedJson);
-                    }
-
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("❌ Failed to parse JSON: " + ex.Message);
-                    Console.WriteLine(getResponse.Content); // fallback to raw
-                }
-
-
-                if (getResponse == null || !getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
-                {
-                    return $"❌ Polling error: {getResponse?.Content ?? "No response"}";
-                }
-
-                var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
-                status = pollResult?["status"]?.ToString() ?? "unknown";
-
-                if (status == "succeeded")
-                {
-                    // Step 2: Get the output from the response
-                    var outputToken = pollResult?["output"];
-                    var metrics = pollResult?["metrics"];
-                    if (outputToken is JArray array && array.Count > 0)
-                    {
-                        var generatedText = string.Join("", array.Select(o => o.ToString()));
-                        //if (metrics != null)
-                        //{
-                        //    var inputTokenCount = metrics["input_token_count"]?.ToObject<int>() ?? 0;
-                        //    var outputTokenCount = metrics["output_token_count"]?.ToObject<int>() ?? 0;
-
-                        //    // Append token counts and other info
-                        //    decimal inputTokenPrice = 15m;  // Price per million input tokens
-                        //    decimal outputTokenPrice = 3m;  // Price per million output tokens
-
-                        //    // Calculate the cost for input and output tokens
-                        //    decimal inputCost = inputTokenCount * inputTokenPrice / 1_000_000;
-                        //    decimal outputCost = outputTokenCount * outputTokenPrice / 1_000_000;
-
-                        //    decimal totalCost = inputCost + outputCost;
-
-                        //    generatedText += $"\n\nTokens (Input/Output/Total): {inputTokenCount}/{outputTokenCount}/{inputTokenCount + outputTokenCount}\nTotal Cost: ${totalCost}";
-                        //}
-                        return string.IsNullOrWhiteSpace(generatedText) ? "❌ No text generated." : generatedText;
-                    }
-
-                    return "❌ Output missing in response.";
-                }
-
-                if (status == "failed")
-                {
-                    return $"❌ Text generation failed: {response.Content}";
-                }
-            }
-
-            return "❌ Unknown error occurred.";
-        }
-        else
-        {
-            // Log the error if the request itself failed
-            Console.WriteLine($"Error: {response.Content}");
             return $"❌ Error generating text: {response.Content}";
         }
+
+        var initialResponse = JsonConvert.DeserializeObject<JObject>(response.Content);
+        var getUrl = initialResponse?["urls"]?["get"]?.ToString();
+        if (string.IsNullOrWhiteSpace(getUrl))
+        {
+            return "❌ Prediction ID or URL missing in response.";
+        }
+
+        const int maxAttempts = 10;
+        int attempts = 0;
+        string status = "starting";
+
+        while (status != "succeeded" && status != "failed" && attempts++ < maxAttempts)
+        {
+
+            await Task.Delay(2000);
+
+            var getRequest = new RestRequest(getUrl, Method.Get);
+            getRequest.AddHeader("Authorization", $"Bearer {_replicateApiKey}");
+            var getResponse = await client.ExecuteAsync(getRequest);
+
+            if (!getResponse.IsSuccessful || string.IsNullOrWhiteSpace(getResponse.Content))
+            {
+                return $"❌ Polling error: {getResponse?.Content ?? "No response"}";
+            }
+
+            var pollResult = JsonConvert.DeserializeObject<JObject>(getResponse.Content);
+            status = pollResult?["status"]?.ToString() ?? "unknown";
+            Console.WriteLine($"Attempt #{attempts}: status = {status}");
+            Console.WriteLine($"Raw poll content: {getResponse.Content}");
+
+            if (status == "succeeded")
+            {
+                var outputToken = pollResult?["output"];
+                if (outputToken != null)
+                {
+                    string result = outputToken.Type == JTokenType.Array
+                        ? string.Join("", outputToken.Select(o => o.ToString()))
+                        : outputToken.ToString();
+
+                    return string.IsNullOrWhiteSpace(result) ? "❌ No text generated." : result;
+                }
+
+            }
+
+            if (status == "failed")
+            {
+                return $"❌ Text generation failed: {getResponse.Content}";
+            }
+        }
+
+        return "❌ Polling timed out or unknown error occurred.";
     }
+
     [SlashCommand("catch", "Catch a pokemon.")]
     public async Task CatchPokemon([Summary("name", "The name of the Pokémon")] string? name = null)
     {
@@ -532,7 +457,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
             string pokeName = nameProp.GetString() ?? "Unknown";
             int id = root.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : -1;
-            int baseXp = root.TryGetProperty("base_experience", out var xpProp) ? xpProp.GetInt32() : 0;
+            //int baseXp = root.TryGetProperty("base_experience", out var xpProp) ? xpProp.GetInt32() : 0;
 
             string typeStr = "Unknown";
             if (root.TryGetProperty("types", out var typesProp))
@@ -619,20 +544,24 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
                     }
                 }
             }
-            if (evoNames.Count == 0) evoNames.Add("Unknown");
+            string dexId = id.ToString("D3");
 
+            if (evoNames.Count == 0) evoNames.Add("Unknown");
+            generation = generation.Replace("generation-", "");
+            pokeName = $"#{dexId} {pokeName.ToUpper()} ({generation.ToUpper()})";
             var embed = new EmbedBuilder()
-                .WithTitle($"{pokeName.ToUpper()} #{id} ({generation.Replace("-", " ").ToUpper()})")
-                .WithDescription($"**Type:** {typeStr.ToUpper()}\n**Base XP:** {baseXp}")
+                .WithTitle($"{pokeName}")
+                .WithDescription($"**Type:** {typeStr.ToUpper()}")
                 .WithImageUrl(spriteUrl)
                 .AddField("Abilities", abilityStr.ToUpper(), inline: true)
                 .AddField("Evolution Chain", string.Join(" → ", evoNames).ToUpper(), inline: true)
-                .WithColor(Color.Gold)
+                .WithColor(Discord.Color.Gold)
                 .WithFooter(footer => footer.Text = $"Requested by {Context.User.Username}")
                 .Build();
 
-            if (name == null)
-            { AddPokemonToUser(Context.User.Id, pokeName, false, spriteUrl); }
+
+            _dbHelper.SavePokemon(Context.User.Id, pokeName, 1, true, spriteUrl);
+            // add logic for quantity later
 
             await FollowupAsync(embed: embed);
         }
@@ -643,32 +572,19 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         }
     }
 
-
-    public static void AddPokemonToUser(ulong userId, string pokemonName, bool isShiny = false, string? imageUrl = null)
-    {
-        if (!userPokemonCollection.ContainsKey(userId))
-            userPokemonCollection[userId] = new List<CaughtPokemon>();
-
-        userPokemonCollection[userId].Add(new CaughtPokemon
-        {
-            Name = pokemonName,
-            IsShiny = isShiny,
-            CaughtAt = DateTime.UtcNow,
-            ImageUrl = imageUrl
-        });
-    }
-
     [SlashCommand("pack", "Open a random Pokémon pack ($1000)")]
     public async Task OpenPack()
     {
         await DeferAsync();
 
-        if (_dbHelper.GetMoneyDecimal(Context.User.Id) < 1000)
+        ulong userId = Context.User.Id;
+
+        if (_dbHelper.GetMoney(userId) < 1000)
         {
             await FollowupAsync("Broke boy :skull:");
             return;
         }
-        _dbHelper.SaveMoney(Context.User.Id, -1000);
+        _dbHelper.SaveMoney(userId, -1000);
 
         var rand = new Random();
         var cards = new List<Embed>();
@@ -684,8 +600,45 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             using var doc = await JsonDocument.ParseAsync(stream);
             var root = doc.RootElement;
 
+            string speciesUrl = "";
+            if (root.TryGetProperty("species", out var speciesProp) &&
+                speciesProp.TryGetProperty("url", out var urlProp))
+            {
+                speciesUrl = urlProp.GetString() ?? "";
+            }
+
+            string generation = "Unknown";
+            string evoChainUrl = "";
+            if (!string.IsNullOrEmpty(speciesUrl))
+            {
+                var speciesResponse = await _client.GetAsync(speciesUrl);
+                if (speciesResponse.IsSuccessStatusCode)
+                {
+                    using var speciesDoc = JsonDocument.Parse(await speciesResponse.Content.ReadAsStringAsync());
+                    var speciesRoot = speciesDoc.RootElement;
+
+                    if (speciesRoot.TryGetProperty("generation", out var genProp) &&
+                        genProp.TryGetProperty("name", out var genName))
+                    {
+                        generation = genName.GetString() ?? "Unknown";
+                    }
+
+                    if (speciesRoot.TryGetProperty("evolution_chain", out var evoProp) &&
+                        evoProp.TryGetProperty("url", out var evoUrl))
+                    {
+                        evoChainUrl = evoUrl.GetString() ?? "";
+                    }
+                }
+            }
+
+            int id = root.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : -1;
+            string dexId = id.ToString("D3");
+
+
             if (!root.TryGetProperty("name", out var nameProp)) continue;
             string name = nameProp.GetString() ?? "Unknown";
+            generation = generation.Replace("generation-", "");
+            name = $"#{dexId} {name.ToUpper()} ({generation.ToUpper()})";
             bool isShiny = rand.NextDouble() < 0.01;
 
             string imageUrl = "";
@@ -703,12 +656,12 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
                 }
             }
 
-            AddPokemonToUser(Context.User.Id, name, isShiny, imageUrl);
+            _dbHelper.SavePokemon(Context.User.Id, name, 1, true, imageUrl);
 
             var embed = new EmbedBuilder()
-                .WithTitle($"{(isShiny ? "✨ Shiny " : "")}#{pokemonId} {name.ToUpper()}")
+                .WithTitle($"{(isShiny ? "✨ Shiny " : "")}{name}")
                 .WithImageUrl(imageUrl)
-                .WithColor(isShiny ? Color.Magenta : Color.Blue)
+                .WithColor(isShiny ? Discord.Color.Magenta : Discord.Color.Blue)
                 .WithFooter($"Card {cards.Count + 1} of 5")
                 .Build();
 
@@ -721,173 +674,177 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
             return;
         }
 
+        // Store cards per-user, ideally in memory or a temporary store
+        openPackCards[userId] = cards;
+
         var component = new ComponentBuilder()
-            .WithButton("Previous", customId: "pack_prev", disabled: true)
-            .WithButton("Next", customId: "pack_next", style: ButtonStyle.Primary)
+            .WithButton("⬅️ Previous", $"pack_{userId}_0", disabled: true)
+            .WithButton("Next ➡️", $"pack_{userId}_1", disabled: cards.Count <= 1)
             .Build();
 
-        await ModifyOriginalResponseAsync(msg =>
+        await FollowupAsync(embed: cards[0], components: component);
+
+    }
+
+    [ComponentInteraction("pack_*_*")]
+    public async Task HandlePackPagination(string userIdStr, string indexStr)
+    {
+        if (!ulong.TryParse(userIdStr, out var userId) || userId != Context.User.Id)
         {
-            msg.Embed = cards[0];
+            await RespondAsync("❌ You can't interact with someone else's pack.", ephemeral: true);
+            return;
+        }
+
+        if (!int.TryParse(indexStr, out int index)) return;
+        if (!openPackCards.TryGetValue(userId, out var cards) || index < 0 || index >= cards.Count)
+        {
+            await RespondAsync("❌ Card not found.", ephemeral: true);
+            return;
+        }
+
+        var component = new ComponentBuilder()
+            .WithButton("⬅️ Previous", $"pack_{userId}_{index - 1}", disabled: index == 0)
+            .WithButton("Next ➡️", $"pack_{userId}_{index + 1}", disabled: index == cards.Count - 1)
+            .Build();
+
+        await Context.Interaction.DeferAsync();  // Defer interaction to avoid timeout
+        await Context.Interaction.ModifyOriginalResponseAsync(msg =>
+        {
+            msg.Embed = cards[index];
             msg.Components = component;
         });
 
-        int index = 0;
+    }
+    public Stream GeneratePokedexPage(ulong userId, List<(string name, int amount, bool caught, string img)> caughtList, int page, int perPage, string avatarUrl, bool showAll)
+    {
 
-        async Task HandleInteraction(SocketMessageComponent interaction)
+        const int gridCols = 5, gridRows = 5;
+        const int cellSize = 128, padding = 8;
+        const int imageWidth = gridCols * (cellSize + padding);
+        const int imageHeight = gridRows * (cellSize + padding);
+
+        var bitmap = new Bitmap(imageWidth, imageHeight);
+        using var g = Graphics.FromImage(bitmap);
+        g.Clear(Color.Transparent);
+
+        // Convert caught list to dictionary for lookup
+        var caughtDict = caughtList.ToDictionary(p => p.name.ToLower());
+
+        Console.WriteLine($"pokemon total: {caughtDict.Count}");
+
+        int start = (page - 1) * perPage;
+        if (showAll)
         {
-            if (interaction.User.Id != Context.User.Id) return;
-
-            await interaction.DeferAsync();
-
-            if (interaction.Data.CustomId == "pack_next")
+            for (int i = 0; i < perPage && (start + i) < 1025; i++)
             {
-                index += 1;
+                //Console.WriteLine($"doing pokemon {i}");
+
+                int dexNum = start + i + 1;
+                string dexId = dexNum.ToString("D3");
+                string name = ""; string spriteUrl = ""; bool caught = false;
+
+                var position = new Point((i % gridCols) * (cellSize + padding), (i / gridCols) * (cellSize + padding));
+                // Determine if caught
+                var found = caughtDict.FirstOrDefault(p => p.Key.Contains($"#{dexId}"));
+
+                if (!string.IsNullOrEmpty(found.Key))
+                {
+                    name = found.Key.ToUpper();
+                    spriteUrl = found.Value.img;
+                    caught = found.Value.caught;
+                }
+
+                if (caught && !string.IsNullOrWhiteSpace(spriteUrl))
+                {
+                    DrawCaughtPokemon(g, spriteUrl, position, cellSize, name, avatarUrl);
+                }
+                else
+                {
+                    DrawUnknownPokemon(g, position, cellSize, $"#{dexId}");
+                }
             }
-            else if (interaction.Data.CustomId == "pack_prev")
+        }
+        else
+        {
+
+            for (int i = 0; i < caughtList.Count; i++)
             {
-                index -= 1;
+                var entry = caughtList[i];
+
+                var position = new Point((i % gridCols) * (cellSize + padding), (i / gridCols) * (cellSize + padding));
+                string name = entry.name.ToUpper();
+                Console.WriteLine($"name: {name}");
+                string spriteUrl = entry.img;
+                bool caught = entry.caught;
+
+                if (caught && !string.IsNullOrWhiteSpace(spriteUrl))
+                {
+                    DrawCaughtPokemon(g, spriteUrl, position, cellSize, name, avatarUrl);
+                }
+                
             }
 
-            var newComponent = new ComponentBuilder()
-                .WithButton("Previous", "pack_prev", disabled: index == 0)
-                .WithButton("Next", "pack_next", disabled: index == cards.Count - 1)
-                .Build();
-
-            await interaction.ModifyOriginalResponseAsync(msg =>
-            {
-                msg.Embed = cards[index];
-                msg.Components = newComponent;
-            });
         }
 
-        Context.Client.ButtonExecuted += HandleInteraction;
-        _ = Task.Delay(TimeSpan.FromMinutes(2)).ContinueWith(_ => Context.Client.ButtonExecuted -= HandleInteraction);
+        var stream = new MemoryStream();
+        bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+        stream.Position = 0;
+        return stream;
+    }
+
+    void DrawCaughtPokemon(Graphics g, string spriteUrl, Point pos, int size, string name, string avatarUrl)
+    {
+        using var sprite = DownloadImage(spriteUrl);
+        using var avatar = DownloadImage(avatarUrl);
+        var font = new Font("Arial", 10, FontStyle.Bold);
+
+        g.DrawImage(sprite, pos.X, pos.Y, size, size);
+        g.DrawString($"{name}", font, Brushes.White, pos.X, pos.Y + size - 17);
+        //g.DrawImage(avatar, pos.X + size - 24, pos.Y + size - 24, 24, 24);
+    }
+
+    void DrawUnknownPokemon(Graphics g, Point pos, int size, string number)
+    {
+        var rect = new Rectangle(pos.X, pos.Y, size, size);
+        g.FillRectangle(Brushes.Black, rect);
+        var font = new Font("Arial", 12, FontStyle.Bold);
+        g.DrawString(number, font, Brushes.White, rect, new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+    }
+    Bitmap DownloadImage(string url)
+    {
+        using var client = new WebClient();
+        using var stream = client.OpenRead(url);
+        return new Bitmap(stream);
     }
 
 
-
-[SlashCommand("pokedex", "View your caught Pokémon.")]
-    public async Task Pokedex()
+    [SlashCommand("pokedex", "View your Pokédex")]
+    public async Task PokedexCommand(int page = 1, bool showAll = false)
     {
-        await DeferAsync();
+        await DeferAsync(); // Required in Interaction commands
 
         try
         {
-            // Get the user's Discord ID
-            ulong userId = (Context.User as SocketUser)?.Id ?? 0;
+            var userId = Context.User.Id;
 
-            // Check if the user has caught any Pokémon
-            if (userPokemonCollection.ContainsKey(userId) && userPokemonCollection[userId].Any())
-            {
-                var caughtPokemons = userPokemonCollection[userId];
+            var caughtList = _dbHelper.GetPokemon(userId);
+            int totalPokemon = showAll ? 1025 : caughtList.Count;
+            int perPage = 25;
+            int maxPage = (int)Math.Ceiling(totalPokemon / (double)perPage);
+            page = Math.Clamp(page, 1, maxPage);
 
-                var grouped = caughtPokemons
-                    .GroupBy(p => p.Name)
-                    .Select(g => new CaughtPokemon
-                    {
-                        Name = g.Key,
-                        Count = g.Count(),
-                        IsShiny = g.Any(p => p.IsShiny), // or determine this based on your logic
-                        CaughtAt = g.Min(p => p.CaughtAt), // optional
-                        ImageUrl = g.Max(p => p.ImageUrl)
-                    })
-                    .ToList();
+            var imageStream = GeneratePokedexPage(userId, caughtList, page, perPage, Context.User.GetAvatarUrl(), showAll);
+            imageStream.Position = 0;
 
-
-                var (embed, components) = await SendPokedexPage(Context, grouped, page: 1);
-
-                await FollowupAsync(embed: embed, components: components);
-            }
-            else
-            {
-                await RespondAsync("❌ You haven't caught any Pokémon yet!");
-            }
+            await FollowupWithFileAsync(imageStream, $"pokedex_page_{page}.png", text: $"Page {page}/{maxPage}");
         }
         catch (Exception ex)
         {
             Console.WriteLine(ex);
-            await RespondAsync("❌ An error occurred while fetching your Pokedex.");
+            await FollowupAsync($"Error: {ex.Message}");
         }
     }
-    private static Task<(Embed embed, MessageComponent components)> SendPokedexPage(IInteractionContext context, List<CaughtPokemon> pokemons, int page)
-    {
-        //await DeferAsync();
 
-        const int pageSize = 5; // Show 5 Pokémon per page
-        int totalPages = (int)Math.Ceiling(pokemons.Count / (double)pageSize);
-        page = Math.Max(1, Math.Min(page, totalPages)); // Clamp page between 1 and totalPages
-
-        var paginated = pokemons
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToList();
-
-        var embed = new EmbedBuilder()
-            .WithTitle($"{context.User.Username}'s Pokédex (Page {page}/{totalPages})")
-            .WithColor(Color.Green);
-
-        foreach (var p in paginated)
-        {
-            embed.AddField(p.Name.ToUpper(), $"Quantity: {p.Count}", inline: false);
-        }
-
-        if (paginated.Count == 0)
-        {
-            embed.Description = "No Pokémon on this page.";
-        }
-        var builder = new ComponentBuilder()
-        .WithButton("⏮ Prev", customId: $"pokedex_prev_{page}", disabled: page == 1)
-        .WithButton("Next ⏭", customId: $"pokedex_next_{page}", disabled: page == totalPages);
-
-        return Task.FromResult<(Embed embed, MessageComponent components)>((embed.Build(), builder.Build()));
-    }
-    [ComponentInteraction("pokedex_prev_*")]
-    public async Task HandlePrevButton(string rawPage)
-    {
-        await DeferAsync();
-
-        if (!int.TryParse(rawPage, out int currentPage)) return;
-
-        ulong userId = Context.User.Id;
-        if (!userPokemonCollection.TryGetValue(userId, out List<CaughtPokemon>? value)) return;
-
-        var caughtPokemons = value.GroupBy(p => p.Name)
-            .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count(), ImageUrl = g.Max(p => p.ImageUrl) })
-            .ToList();
-
-        var page = currentPage - 1;
-        var message = await SendPokedexPage(Context, caughtPokemons, page);
-        await ModifyOriginalResponseAsync(msg =>
-        {
-            msg.Embed = message.embed;
-            msg.Components = message.components;
-        });
-    }
-
-    [ComponentInteraction("pokedex_next_*")]
-    public async Task HandleNextButton(string rawPage)
-    {
-        await DeferAsync();
-
-        if (!int.TryParse(rawPage, out int currentPage)) return;
-
-        ulong userId = Context.User.Id;
-        if (!userPokemonCollection.ContainsKey(userId)) return;
-
-        var caughtPokemons = userPokemonCollection[userId]
-            .GroupBy(p => p.Name)
-            .Select(g => new CaughtPokemon { Name = g.Key, Count = g.Count(), ImageUrl = g.Max(p => p.ImageUrl) })
-            .ToList();
-
-        var page = currentPage + 1;
-        var message = await SendPokedexPage(Context, caughtPokemons, page);
-        await ModifyOriginalResponseAsync(msg =>
-        {
-            msg.Embed = message.embed;
-            msg.Components = message.components;
-        });
-    }
 
     //[SlashCommand("random", "Generate a random image with FLUX.1 [schnell]")]
     //public async Task GenerateRandomImage()
@@ -945,7 +902,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
         await DeferAsync();
 
         ulong userID = Context.User.Id;
-        decimal money = _dbHelper.GetMoneyDecimal(userID);
+        decimal money = _dbHelper.GetMoney(userID);
 
         if (money >= 10)
         {
@@ -1005,7 +962,7 @@ public class MyCommands : InteractionModuleBase<SocketInteractionContext>
 
         try
         {
-            decimal money = _dbHelper.GetMoneyDecimal(Context.User.Id);
+            decimal money = _dbHelper.GetMoney(Context.User.Id);
             //Console.WriteLine(money);
             if (money != 0)
             {

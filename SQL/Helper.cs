@@ -124,20 +124,20 @@ PokeImg = excluded.PokeImg;
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-        SELECT PokeName, PokeAmt, PokeCaught, PokeImg, 
+        SELECT SUBSTRING(PokeName, 1, 4) AS PokeID, PokeName, PokeAmt, PokeCaught, PokeImg
         FROM CachePokemon
         WHERE UserID = $id
-        ORDER BY PokeName ASC;
+        ORDER BY PokeID ASC;
     ";
             command.Parameters.AddWithValue("$id", userId);
 
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var name = reader.GetString(0);
-                var amt = reader.GetInt32(1);
-                var caught = reader.GetBoolean(2);
-                var img = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+                var name = reader.GetString(1);
+                var amt = reader.GetInt32(2);
+                var caught = reader.GetBoolean(3);
+                var img = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
 
                 pokemons.Add((name, amt, caught, img));
             }
@@ -145,7 +145,22 @@ PokeImg = excluded.PokeImg;
             return pokemons;
         }
 
+        public void KillPokemon(ulong userId, string pokemon)
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
 
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+DELETE FROM CachePokemon
+WHERE UserID = $id AND PokeName LIKE '$pk%'; 
+";
+            command.Parameters.AddWithValue("$id", userId);
+            command.Parameters.AddWithValue("$pk", pokemon);
+           
+
+            command.ExecuteNonQuery();
+        }
         public void SavePrompt(string hashedPrompt, string encodedPrompt)
         {
             using var connection = new SqliteConnection($"Data Source={_dbPath}");

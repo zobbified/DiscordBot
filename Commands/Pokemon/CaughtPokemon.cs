@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace DiscordBot.Commands.Pokemon
 {
-    public class CaughtPokemon
+    public class CaughtPokemon ()
     {
         public string Name { get; set; } = "MissingNo";
         public int Amount { get; set; }

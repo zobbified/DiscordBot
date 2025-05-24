@@ -119,7 +119,7 @@ namespace DiscordBot.Main
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error registering commands: {ex.Message}");
+                Console.WriteLine($"Error registering commands: {ex.Message}");
             }
         }
 

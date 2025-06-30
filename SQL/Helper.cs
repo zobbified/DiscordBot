@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Data.SqlTypes;
 using System.Data;
 using Microsoft.Data.Sqlite;
+using PokeApiNet;
 
 namespace DiscordBot.SQL
 {
@@ -37,30 +38,35 @@ namespace DiscordBot.SQL
             var command = connection.CreateCommand();
             command.CommandText = @"
 
-            CREATE TABLE IF NOT EXISTS PromptCache (
-                HashedPrompt TEXT PRIMARY KEY,
-                EncodedPrompt TEXT NOT NULL,
-                CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS GamblingCache (
-                UserID TEXT PRIMARY KEY,
-                Money DECIMAL(10, 2),
-                LastUpdated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS JelqCache (
-                JelqId INTEGER PRIMARY KEY AUTOINCREMENT,
-                JelqDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                JelqAmount DOUBLE NOT NULL,
-                JelqAmountTotal DOUBLE
-            );
-            CREATE TABLE IF NOT EXISTS CachePokemon (
-                UserID INTEGER NOT NULL,
-                PokeName TEXT NOT NULL,
-                PokeAmt INTEGER DEFAULT 0,
-                PokeCaught BOOLEAN DEFAULT 0,
-                PokeImg TEXT,
-                PRIMARY KEY (UserID, PokeName)
-            );
+CREATE TABLE IF NOT EXISTS PromptCache (
+    HashedPrompt TEXT PRIMARY KEY,
+    EncodedPrompt TEXT NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS GamblingCache (
+    UserID TEXT PRIMARY KEY,
+    Money DECIMAL(10, 2),
+    LastUpdated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS JelqCache (
+    JelqId INTEGER PRIMARY KEY AUTOINCREMENT,
+    JelqDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    JelqAmount DOUBLE NOT NULL,
+    JelqAmountTotal DOUBLE
+);
+CREATE TABLE IF NOT EXISTS CachePokemon (
+    UserID INTEGER NOT NULL,
+    PokeName TEXT NOT NULL,
+    PokeAmt INTEGER DEFAULT 0,
+    PokeCaught BOOLEAN DEFAULT 0,
+    PokeImg TEXT,
+    PRIMARY KEY (UserID, PokeName)
+);
+CREATE TABLE IF NOT EXISTS GirlsCache (
+    UserID INTEGER NOT NULL,
+    GirlInfo TEXT NOT NULL,
+    LoveMeter DOUBLE(2, 2) DEFAULT 0
+);         
             ";
             command.ExecuteNonQuery();
         }
@@ -157,7 +163,7 @@ WHERE UserID = $id AND PokeName LIKE '$pk%';
 ";
             command.Parameters.AddWithValue("$id", userId);
             command.Parameters.AddWithValue("$pk", pokemon);
-           
+
 
             command.ExecuteNonQuery();
         }
@@ -224,6 +230,46 @@ WHERE UserID = $user;
             return reader.Read() ? reader.GetDecimal(0) : 0;
         }
 
+        public void SaveGirl (ulong userID, string info)
+        {
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
 
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+INSERT INTO GirlsCache (UserID, GirlInfo)
+VALUES ($user, $info);
+";
+            command.Parameters.AddWithValue("$user", userID);
+            command.Parameters.AddWithValue("$info", info);
+
+            command.ExecuteNonQuery();
+
+        }
+        public List<(string info, double meter)> GetGirl(ulong userID)
+        {
+            var girls = new List<(string info, double meter)>();
+
+            using var connection = new SqliteConnection($"Data Source={_dbPath}");
+            connection.Open();
+
+            var command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT GirlInfo, LoveMeter FROM GirlsCache
+WHERE UserID = $user;
+";
+            command.Parameters.AddWithValue("$user", userID);
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var info = reader.GetString(0);
+                var meter = reader.GetDouble(1  );
+               
+                girls.Add((info, meter));
+            }
+
+            return girls;
+        }
     }
 }

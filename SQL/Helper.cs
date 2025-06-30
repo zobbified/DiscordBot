@@ -37,7 +37,6 @@ namespace DiscordBot.SQL
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-
 CREATE TABLE IF NOT EXISTS PromptCache (
     HashedPrompt TEXT PRIMARY KEY,
     EncodedPrompt TEXT NOT NULL,
@@ -64,8 +63,9 @@ CREATE TABLE IF NOT EXISTS CachePokemon (
 );
 CREATE TABLE IF NOT EXISTS GirlsCache (
     UserID INTEGER NOT NULL,
+    GirlName TEXT NOT NULL,
     GirlInfo TEXT NOT NULL,
-    LoveMeter DOUBLE(2, 2) DEFAULT 0
+    GirlImg TEXT NOT NULL
 );         
             ";
             command.ExecuteNonQuery();
@@ -230,32 +230,34 @@ WHERE UserID = $user;
             return reader.Read() ? reader.GetDecimal(0) : 0;
         }
 
-        public void SaveGirl (ulong userID, string info)
+        public void SaveGirl (ulong userID, string name, string info, string image)
         {
             using var connection = new SqliteConnection($"Data Source={_dbPath}");
             connection.Open();
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-INSERT INTO GirlsCache (UserID, GirlInfo)
-VALUES ($user, $info);
+INSERT INTO GirlsCache (UserID, GirlName, GirlInfo, GirlImg)
+VALUES ($user, $name, $info, $image);
 ";
             command.Parameters.AddWithValue("$user", userID);
+            command.Parameters.AddWithValue("$name", name);
             command.Parameters.AddWithValue("$info", info);
+            command.Parameters.AddWithValue("$image", image);
 
             command.ExecuteNonQuery();
 
         }
-        public List<(string info, double meter)> GetGirl(ulong userID)
+        public List<(string name, string info, string img)> GetGirl(ulong userID)
         {
-            var girls = new List<(string info, double meter)>();
+            var girls = new List<(string name, string info, string img)>();
 
             using var connection = new SqliteConnection($"Data Source={_dbPath}");
             connection.Open();
 
             var command = connection.CreateCommand();
             command.CommandText = @"
-SELECT GirlInfo, LoveMeter FROM GirlsCache
+SELECT GirlName, GirlInfo, GirlImg FROM GirlsCache
 WHERE UserID = $user;
 ";
             command.Parameters.AddWithValue("$user", userID);
@@ -263,10 +265,11 @@ WHERE UserID = $user;
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var info = reader.GetString(0);
-                var meter = reader.GetDouble(1  );
-               
-                girls.Add((info, meter));
+                var name = reader.GetString(0);
+                var info = reader.GetString(1);
+                var img = reader.GetString(2);
+
+                girls.Add((name, info, img));
             }
 
             return girls;
